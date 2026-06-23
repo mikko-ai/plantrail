@@ -1,24 +1,24 @@
-# Goal
+# 目标
 
-Describe the goal of this run.
+描述本次 run 的目标。
 
-# Non-goals
+# 非目标
 
 - 
 
-# Affected modules
+# 受影响模块
 
 - src/
 
-# Steps
+# 步骤
 
-## [step-1] Example step
+## [step-1] 示例步骤
 
-**Description:** What this step does
-**Action types:** read, write_file
-**Path patterns:** src/**
-**Command patterns:** 
-**Verification:** npm test
-**Risks:** Low
-**Rollback:** git checkout -- .
-**Requires user confirm:** false
+**描述：** 这个步骤要做什么
+**动作类型：** read, write_file
+**路径模式：** src/**
+**命令模式：** 
+**验证：** npm test
+**风险：** 低
+**回滚：** git checkout -- .
+**需要用户确认：** false

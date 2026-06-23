@@ -47,16 +47,18 @@ function formatErrors(errors: ErrorObject[] | null | undefined): string {
 
 export function parsePlanMarkdown(content: string): PlanDocument {
   const sections = splitTopLevelSections(content);
-  const goal = sections.get("goal");
-  const stepsRaw = sections.get("steps");
+  const goal = getSection(sections, ["goal", "目标"]);
+  const stepsRaw = getSection(sections, ["steps", "步骤"]);
 
   if (!goal || !stepsRaw) {
-    throw new Error("Plan must include Goal and Steps sections");
+    throw new Error("Plan must include Goal/目标 and Steps/步骤 sections");
   }
 
   const goalText = goal.trim();
-  const non_goals = parseList(sections.get("non-goals") ?? "");
-  const affected_modules = parseList(sections.get("affected modules") ?? "");
+  const non_goals = parseList(getSection(sections, ["non-goals", "非目标"]) ?? "");
+  const affected_modules = parseList(
+    getSection(sections, ["affected modules", "受影响模块"]) ?? "",
+  );
   const steps = parseSteps(stepsRaw);
 
   const doc: PlanDocument = {
@@ -67,6 +69,14 @@ export function parsePlanMarkdown(content: string): PlanDocument {
   };
   validatePlan(doc);
   return doc;
+}
+
+function getSection(sections: Map<string, string>, names: string[]): string | undefined {
+  for (const name of names) {
+    const value = sections.get(name);
+    if (value !== undefined) return value;
+  }
+  return undefined;
 }
 
 function splitTopLevelSections(content: string): Map<string, string> {
@@ -115,20 +125,20 @@ function parseSteps(section: string): PlanDocument["steps"] {
 
     const fields = new Map<string, string>();
     for (const line of lines.slice(1)) {
-      const m = line.match(/^\*\*([^:]+):\*\*\s*(.*)$/);
+      const m = line.match(/^\*\*([^:：]+)[：:]\*\*\s*(.*)$/);
       if (m) fields.set(m[1].trim().toLowerCase(), m[2].trim());
     }
 
-    const action_types = (fields.get("action types") ?? "")
+    const action_types = (getField(fields, ["action types", "动作类型"]) ?? "")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean) as PlanDocument["steps"][0]["action_types"];
 
-    const path_patterns = (fields.get("path patterns") ?? "")
+    const path_patterns = (getField(fields, ["path patterns", "路径模式"]) ?? "")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
-    const command_patterns = (fields.get("command patterns") ?? "")
+    const command_patterns = (getField(fields, ["command patterns", "命令模式"]) ?? "")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
@@ -136,16 +146,26 @@ function parseSteps(section: string): PlanDocument["steps"] {
     return {
       step_id,
       title,
-      description: fields.get("description") || title,
+      description: getField(fields, ["description", "描述"]) || title,
       action_types,
       path_patterns: path_patterns.length ? path_patterns : undefined,
       command_patterns: command_patterns.length ? command_patterns : undefined,
-      verification: fields.get("verification") ?? "",
-      risks: fields.get("risks") ?? "",
-      rollback: fields.get("rollback") ?? "",
-      requires_user_confirm: /true/i.test(fields.get("requires user confirm") ?? ""),
+      verification: getField(fields, ["verification", "验证"]) ?? "",
+      risks: getField(fields, ["risks", "风险"]) ?? "",
+      rollback: getField(fields, ["rollback", "回滚"]) ?? "",
+      requires_user_confirm: /true/i.test(
+        getField(fields, ["requires user confirm", "需要用户确认"]) ?? "",
+      ),
     };
   });
+}
+
+function getField(fields: Map<string, string>, names: string[]): string | undefined {
+  for (const name of names) {
+    const value = fields.get(name);
+    if (value !== undefined) return value;
+  }
+  return undefined;
 }
 
 export function planToAllowedSteps(plan: PlanDocument) {

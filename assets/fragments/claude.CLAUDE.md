@@ -1,9 +1,9 @@
 ## Plantrail workflow
 
-Use `plantrail` CLI for Plan → Review → Approve → Doing → Evidence → Final.
+使用 `plantrail` CLI 执行计划 → 审查 → 批准 → 执行 → 证据 → 总结流程。
 
-- Init: `plantrail init-run --goal "..."`
-- Approve: only user via `plantrail approve <run> --by user`
-- Before acting: `plantrail status` — stop if hooks missing
+- 初始化：`plantrail init-run --goal "..."`
+- 批准：只能由用户通过 `plantrail approve <run> --by user` 完成
+- 动作前：运行 `plantrail status`；如果 hooks 缺失则停止
 
-Reviewer agents write `review.md` only; they must not approve.
+reviewer agents 只能写 `review.md`，不得批准。

@@ -1,15 +1,15 @@
-# Review
+# 审查
 
-Reviewer output only. Do not modify `approval.json`.
+仅供 reviewer 输出。不要修改 `approval.json`。
 
-## Findings
+## 发现
 
 - 
 
-## Conclusion
+## 结论
 
 `approved_recommendation` | `changes_requested`
 
-## Notes
+## 备注
 
 - 

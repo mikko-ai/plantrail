@@ -27,6 +27,9 @@ describe("happy path", () => {
   it("runs full workflow", () => {
     const runId = initRun(root, "Test feature");
     expect(getActiveRunId(root)).toBe(runId);
+    expect(readFileSync(join(root, ".agent-loop", "runs", runId, "request.md"), "utf8")).toContain(
+      "# 请求",
+    );
 
     const plan = `# Goal
 Test
@@ -49,6 +52,9 @@ Test
     writeFileSync(join(root, ".agent-loop", "runs", runId, "plan.md"), plan);
 
     reviewPlan(root, runId);
+    expect(readFileSync(join(root, ".agent-loop", "runs", runId, "review.md"), "utf8")).toContain(
+      "## 审查清单",
+    );
     approveRun(root, runId, "user");
 
     const allow = runGate(root, {

@@ -1,3 +1,3 @@
-# Evidence
+# 证据
 
-Paste test output, lint results, build logs, or diff summaries here.
+在这里粘贴测试输出、lint 结果、构建日志或 diff 摘要。

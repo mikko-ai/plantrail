@@ -1,3 +1,3 @@
-# Doing log
+# 执行日志
 
-Execution notes linked to plan steps.
+记录与 plan 步骤关联的执行说明。

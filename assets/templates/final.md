@@ -1,3 +1,3 @@
-# Final summary
+# 最终总结
 
-Summarize outcomes, remaining risks, and follow-ups.
+总结结果、剩余风险和后续事项。

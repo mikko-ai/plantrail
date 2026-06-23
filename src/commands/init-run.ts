@@ -38,7 +38,7 @@ export function initRun(projectRoot: string, goal: string): string {
   assertCanStartNewRun(projectRoot);
   const runId = makeRunId(goal);
   return withRunLock(projectRoot, runId, () => {
-    writeText(runFile(projectRoot, runId, "request.md"), `# Request\n\n${goal.trim()}\n`);
+    writeText(runFile(projectRoot, runId, "request.md"), `# 请求\n\n${goal.trim()}\n`);
     copyTemplate("plan.md", runFile(projectRoot, runId, "plan.md"));
     copyTemplate("review.md", runFile(projectRoot, runId, "review.md"));
     copyTemplate("doing.md", runFile(projectRoot, runId, "doing.md"));

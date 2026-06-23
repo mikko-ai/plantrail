@@ -1,40 +1,40 @@
-# Plantrail install guide (Cursor)
+# Plantrail 安装指南（Cursor）
 
-You are installing **plantrail** for Cursor. Follow these steps and ask the user when choices are required.
+你正在为 Cursor 安装 **plantrail**。按以下步骤执行；遇到需要选择的地方，先询问用户。
 
-## Questions (ask user)
+## 需要询问用户
 
-1. **Scope**: project (`.cursor/` in repo) or global (`~/.cursor/`)? Default: **project**.
-2. **Approval policy**: keep default user-only approval? Default: **yes**.
-3. **High-risk actions**: use defaults (install deps, delete, git push, deploy, credentials)? Default: **yes**.
+1. **安装范围**：项目级（仓库内 `.cursor/`）还是全局（`~/.cursor/`）？默认：**项目级**。
+2. **审批策略**：是否保留默认的仅用户可批准？默认：**是**。
+3. **高危动作**：是否使用默认清单（安装依赖、删除、`git push`、部署、凭据）？默认：**是**。
 
-## Install
+## 安装
 
-From the project root (or target workspace):
+在项目根目录（或目标工作区）运行：
 
 ```bash
 npx plantrail install --agent cursor --scope project
 ```
 
-Use `--scope global` if the user chose global.
+如果用户选择全局安装，改用 `--scope global`。
 
-## Verify
+## 验证
 
 ```bash
 npx plantrail status
 ```
 
-Confirm `hook_probe.cursor` is true. If false, re-run install or check `.cursor/hooks.json`.
+确认 `hook_probe.cursor` 为 true。若为 false，重新运行安装命令或检查 `.cursor/hooks.json`。
 
-## Usage reminder
+## 使用提醒
 
-Tell the user:
+告诉用户：
 
-- Run `plantrail init-run --goal "..."` to start a task
-- Only the user may run `plantrail approve <run> --by user`
-- Reviewer agents write `review.md` only
+- 运行 `plantrail init-run --goal "..."` 开始任务
+- 只有用户可以运行 `plantrail approve <run> --by user`
+- reviewer agent 只能写 `review.md`
 
-## Uninstall
+## 卸载
 
 ```bash
 npx plantrail uninstall --agent cursor --scope project

@@ -1,37 +1,37 @@
-# Plantrail install guide (Codex)
+# Plantrail 安装指南（Codex）
 
-You are installing **plantrail** for OpenAI Codex CLI.
+你正在为 OpenAI Codex CLI 安装 **plantrail**。
 
-## Questions (ask user)
+## 需要询问用户
 
-1. **Scope**: project (`.codex/` in repo) or global (`~/.codex/`)? Default: **project**.
-2. Confirm they can run **`/hooks`** in Codex to trust hooks (required — no programmatic trust API).
+1. **安装范围**：项目级（仓库内 `.codex/`）还是全局（`~/.codex/`）？默认：**项目级**。
+2. 确认用户可以在 Codex 中运行 **`/hooks`** 来信任 hooks（必需；没有程序化 trust API）。
 
-## Install
+## 安装
 
 ```bash
 npx plantrail install --agent codex --scope project
 ```
 
-## Manual trust (required)
+## 手动信任（必需）
 
-After install, instruct the user:
+安装后，提醒用户：
 
-1. Open Codex CLI in this project
-2. Run `/hooks`
-3. Review and **trust** plantrail hooks
+1. 在本项目中打开 Codex CLI
+2. 运行 `/hooks`
+3. 检查并 **trust** plantrail hooks
 
-Until trusted, enforcement is **fail-open**.
+在完成信任前，门禁会 **fail-open**。
 
-## Verify
+## 验证
 
 ```bash
 npx plantrail status
 ```
 
-Check warnings for Codex trust status.
+检查输出中的 Codex trust 状态警告。
 
-## Uninstall
+## 卸载
 
 ```bash
 npx plantrail uninstall --agent codex --scope project

@@ -9,15 +9,15 @@ export function reviewPlan(projectRoot: string, runId: string): void {
   validatePlan(projectRoot, runId);
   const reviewPath = runFile(projectRoot, runId, "review.md");
   const content = readText(reviewPath);
-  if (!content.includes("## Review checklist")) {
-    appendMarkdownSection(reviewPath, "Review checklist", [
-      "- Plan is executable",
-      "- No obvious omissions or circular dependencies",
-      "- No dangerous commands without verification",
-      "- Can be executed step-by-step safely",
-      "- User approval required for high-risk actions",
+  if (!content.includes("## 审查清单") && !content.includes("## Review checklist")) {
+    appendMarkdownSection(reviewPath, "审查清单", [
+      "- 计划可执行",
+      "- 没有明显遗漏或循环依赖",
+      "- 没有没有验证措施的危险命令",
+      "- 可以安全地逐步执行",
+      "- 高危动作需要用户批准",
       "",
-      "**Conclusion**: `approved_recommendation` | `changes_requested`",
+      "**结论**：`approved_recommendation` | `changes_requested`",
     ].join("\n"));
   }
   updateApproval(projectRoot, runId, (record) => {
