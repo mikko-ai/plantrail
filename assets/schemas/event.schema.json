@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://plantrail.dev/schemas/event.schema.json",
+  "title": "Plantrail Event",
+  "type": "object",
+  "required": ["ts", "kind", "run_id", "message"],
+  "additionalProperties": false,
+  "properties": {
+    "ts": { "type": "string", "format": "date-time" },
+    "kind": { "type": "string", "minLength": 1 },
+    "run_id": { "type": "string", "minLength": 1 },
+    "step_id": { "type": "string" },
+    "message": { "type": "string", "minLength": 1 },
+    "meta": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

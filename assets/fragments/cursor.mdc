@@ -1,0 +1,16 @@
+---
+description: Plantrail workflow rules for Cursor agents
+globs:
+alwaysApply: false
+---
+
+# Plantrail (agent-loop)
+
+Use the plantrail workflow for non-trivial tasks:
+
+- Create runs with `plantrail init-run --goal "..."`
+- Complete `plan.md`, validate, review, then wait for user `plantrail approve <run> --by user`
+- Log doing/decision/evidence to the active run
+- Run `plantrail status` before risky actions; stop if hooks are not active
+
+Reviewer agents may only write `review.md`. They cannot approve execution.

@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://plantrail.dev/schemas/plan.schema.json",
+  "title": "Plantrail Plan",
+  "type": "object",
+  "required": ["goal", "non_goals", "affected_modules", "steps"],
+  "additionalProperties": false,
+  "properties": {
+    "goal": { "type": "string", "minLength": 1 },
+    "non_goals": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "affected_modules": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/planStep" }
+    },
+    "high_risk_actions": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "$defs": {
+    "planStep": {
+      "type": "object",
+      "required": [
+        "step_id",
+        "title",
+        "description",
+        "action_types",
+        "verification",
+        "risks",
+        "rollback"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "step_id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "action_types": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "read",
+              "search",
+              "write_file",
+              "shell",
+              "install_deps",
+              "delete_file",
+              "git_commit",
+              "git_push",
+              "deploy",
+              "credentials"
+            ]
+          }
+        },
+        "path_patterns": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "command_patterns": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "verification": { "type": "string", "minLength": 1 },
+        "risks": { "type": "string", "minLength": 1 },
+        "rollback": { "type": "string", "minLength": 1 },
+        "requires_user_confirm": { "type": "boolean" }
+      }
+    }
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://plantrail.dev/schemas/approval.schema.json",
+  "title": "Plantrail Approval",
+  "type": "object",
+  "required": ["run_id", "status", "updated_at"],
+  "additionalProperties": false,
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "review_required",
+        "changes_requested",
+        "approved",
+        "doing",
+        "evidence_required",
+        "done",
+        "blocked"
+      ]
+    },
+    "plan_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "signature": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "allowed_steps": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/allowedStep" }
+    },
+    "approved_by": { "type": "string" },
+    "approved_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "allowedStep": {
+      "type": "object",
+      "required": ["step_id", "action_types"],
+      "additionalProperties": false,
+      "properties": {
+        "step_id": { "type": "string", "minLength": 1 },
+        "action_types": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "read",
+              "search",
+              "write_file",
+              "shell",
+              "install_deps",
+              "delete_file",
+              "git_commit",
+              "git_push",
+              "deploy",
+              "credentials"
+            ]
+          }
+        },
+        "path_patterns": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "command_patterns": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}
