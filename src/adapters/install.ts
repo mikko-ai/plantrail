@@ -1,7 +1,16 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { backupFile, injectMarkerBlock, readJson, readText, removeMarkerBlock, writeJson, writeText } from "../core/fs-safe.js";
-import { assetsRoot, packageRoot } from "../paths.js";
+import {
+  backupFile,
+  injectMarkerBlock,
+  readJson,
+  readText,
+  restoreBackup,
+  writeJson,
+  writeText,
+} from "../core/fs-safe.js";
+import { ensureAgentLoop, updateAgentLoopConfig } from "../core/run-store.js";
+import { assetsRoot } from "../paths.js";
 
 export type AgentName = "cursor" | "codex" | "claude";
 export type InstallScope = "project" | "global";
@@ -14,19 +23,32 @@ export interface InstallTarget {
   projectRoot: string;
 }
 
+interface BackupEntry {
+  path: string;
+  backup: string | null;
+}
+
 export function installAgent(target: InstallTarget): void {
-  switch (target.agent) {
-    case "cursor":
-      installCursor(target);
-      break;
-    case "codex":
-      installCodex(target);
-      break;
-    case "claude":
-      installClaude(target);
-      break;
+  ensureAgentLoop(target.projectRoot);
+  const backups: BackupEntry[] = [];
+  try {
+    switch (target.agent) {
+      case "cursor":
+        installCursor(target, backups);
+        break;
+      case "codex":
+        installCodex(target, backups);
+        break;
+      case "claude":
+        installClaude(target, backups);
+        break;
+    }
+    installSharedAssets(target);
+    recordInstalledAgent(target);
+  } catch (err) {
+    rollbackBackups(backups);
+    throw err;
   }
-  installSharedAssets(target);
 }
 
 export function uninstallAgent(target: InstallTarget): void {
@@ -41,22 +63,40 @@ export function uninstallAgent(target: InstallTarget): void {
       uninstallClaude(target);
       break;
   }
+  recordUninstalledAgent(target);
+}
+
+function rollbackBackups(backups: BackupEntry[]): void {
+  for (const entry of [...backups].reverse()) {
+    restoreBackup(entry.path, entry.backup);
+  }
+}
+
+function recordInstalledAgent(target: InstallTarget): void {
+  if (target.scope !== "project") return;
+  updateAgentLoopConfig(target.projectRoot, (config) => ({
+    ...config,
+    scope: target.scope,
+    installed_agents: [...new Set([...config.installed_agents, target.agent])],
+  }));
+}
+
+function recordUninstalledAgent(target: InstallTarget): void {
+  if (target.scope !== "project") return;
+  updateAgentLoopConfig(target.projectRoot, (config) => ({
+    ...config,
+    installed_agents: config.installed_agents.filter((a) => a !== target.agent),
+  }));
 }
 
 function hookCommand(agent: AgentName, scope: InstallScope, projectRoot: string): string {
   const root = scope === "project" ? projectRoot : join(process.env.HOME ?? "", "");
   const rel =
     agent === "cursor"
-      ? scope === "project"
-        ? ".cursor/hooks/plantrail-gate.js"
-        : ".cursor/hooks/plantrail-gate.js"
+      ? ".cursor/hooks/plantrail-gate.js"
       : agent === "codex"
-        ? scope === "project"
-          ? ".codex/hooks/plantrail-gate.js"
-          : ".codex/hooks/plantrail-gate.js"
-        : scope === "project"
-          ? ".claude/hooks/plantrail-gate.js"
-          : ".claude/hooks/plantrail-gate.js";
+        ? ".codex/hooks/plantrail-gate.js"
+        : ".claude/hooks/plantrail-gate.js";
   return `node ${join(root, rel)}`;
 }
 
@@ -67,18 +107,21 @@ function copyHookBundle(agent: AgentName, destDir: string): void {
   if (existsSync(src)) {
     writeText(dest, readText(src));
   } else {
-    // fallback to TS source path message during dev
-    writeText(dest, `#!/usr/bin/env node\nconsole.error('Run npm run build to bundle hooks'); process.exit(1);\n`);
+    writeText(
+      dest,
+      `#!/usr/bin/env node\nconsole.error('Run npm run build to bundle hooks'); process.exit(1);\n`,
+    );
   }
 }
 
-function installCursor(target: InstallTarget): void {
-  const base = target.scope === "project" ? join(target.projectRoot, ".cursor") : join(process.env.HOME ?? "", ".cursor");
+function installCursor(target: InstallTarget, backups: BackupEntry[]): void {
+  const base =
+    target.scope === "project" ? join(target.projectRoot, ".cursor") : join(process.env.HOME ?? "", ".cursor");
   mkdirSync(base, { recursive: true });
   copyHookBundle("cursor", join(base, "hooks"));
 
   const hooksPath = join(base, "hooks.json");
-  backupFile(hooksPath);
+  backups.push({ path: hooksPath, backup: backupFile(hooksPath) });
   const existing = existsSync(hooksPath) ? readJson<Record<string, unknown>>(hooksPath) : { version: 1, hooks: {} };
   const hooks = (existing.hooks as Record<string, unknown[]>) ?? {};
   const cmd = hookCommand("cursor", target.scope, target.projectRoot);
@@ -97,7 +140,8 @@ function installCursor(target: InstallTarget): void {
 }
 
 function uninstallCursor(target: InstallTarget): void {
-  const base = target.scope === "project" ? join(target.projectRoot, ".cursor") : join(process.env.HOME ?? "", ".cursor");
+  const base =
+    target.scope === "project" ? join(target.projectRoot, ".cursor") : join(process.env.HOME ?? "", ".cursor");
   const hooksPath = join(base, "hooks.json");
   if (existsSync(hooksPath)) {
     const existing = readJson<Record<string, unknown>>(hooksPath);
@@ -111,13 +155,14 @@ function uninstallCursor(target: InstallTarget): void {
   }
 }
 
-function installCodex(target: InstallTarget): void {
-  const base = target.scope === "project" ? join(target.projectRoot, ".codex") : join(process.env.HOME ?? "", ".codex");
+function installCodex(target: InstallTarget, backups: BackupEntry[]): void {
+  const base =
+    target.scope === "project" ? join(target.projectRoot, ".codex") : join(process.env.HOME ?? "", ".codex");
   mkdirSync(base, { recursive: true });
   copyHookBundle("codex", join(base, "hooks"));
 
   const hooksPath = join(base, "hooks.json");
-  backupFile(hooksPath);
+  backups.push({ path: hooksPath, backup: backupFile(hooksPath) });
   const existing = existsSync(hooksPath) ? readJson<Record<string, unknown>>(hooksPath) : { hooks: {} };
   const hooks = (existing.hooks as Record<string, unknown[]>) ?? {};
   const cmd = hookCommand("codex", target.scope, target.projectRoot);
@@ -140,7 +185,8 @@ function installCodex(target: InstallTarget): void {
 }
 
 function uninstallCodex(target: InstallTarget): void {
-  const base = target.scope === "project" ? join(target.projectRoot, ".codex") : join(process.env.HOME ?? "", ".codex");
+  const base =
+    target.scope === "project" ? join(target.projectRoot, ".codex") : join(process.env.HOME ?? "", ".codex");
   const hooksPath = join(base, "hooks.json");
   if (existsSync(hooksPath)) {
     const existing = readJson<Record<string, unknown>>(hooksPath);
@@ -154,13 +200,14 @@ function uninstallCodex(target: InstallTarget): void {
   }
 }
 
-function installClaude(target: InstallTarget): void {
-  const base = target.scope === "project" ? join(target.projectRoot, ".claude") : join(process.env.HOME ?? "", ".claude");
+function installClaude(target: InstallTarget, backups: BackupEntry[]): void {
+  const base =
+    target.scope === "project" ? join(target.projectRoot, ".claude") : join(process.env.HOME ?? "", ".claude");
   mkdirSync(base, { recursive: true });
   copyHookBundle("claude", join(base, "hooks"));
 
   const settingsPath = join(base, "settings.json");
-  backupFile(settingsPath);
+  backups.push({ path: settingsPath, backup: backupFile(settingsPath) });
   const existing = existsSync(settingsPath) ? readJson<Record<string, unknown>>(settingsPath) : {};
   const hooks = (existing.hooks as Record<string, unknown[]>) ?? {};
   const cmd = hookCommand("claude", target.scope, target.projectRoot);
@@ -190,7 +237,8 @@ function installClaude(target: InstallTarget): void {
 }
 
 function uninstallClaude(target: InstallTarget): void {
-  const base = target.scope === "project" ? join(target.projectRoot, ".claude") : join(process.env.HOME ?? "", ".claude");
+  const base =
+    target.scope === "project" ? join(target.projectRoot, ".claude") : join(process.env.HOME ?? "", ".claude");
   const settingsPath = join(base, "settings.json");
   if (existsSync(settingsPath)) {
     const existing = readJson<Record<string, unknown>>(settingsPath);
@@ -207,36 +255,21 @@ function uninstallClaude(target: InstallTarget): void {
 
 function installSharedAssets(target: InstallTarget): void {
   const skillSrc = join(assetsRoot(), "skills", "agent-loop", "SKILL.md");
-  if (target.agent === "cursor") {
-    const dest = join(
-      target.scope === "project" ? target.projectRoot : join(process.env.HOME ?? "", ".cursor"),
-      "skills",
-      "agent-loop",
-      "SKILL.md",
-    );
-    mkdirSync(dirname(dest), { recursive: true });
-    if (existsSync(skillSrc)) writeText(dest, readText(skillSrc));
-  }
-  if (target.agent === "codex") {
-    const dest = join(
-      target.scope === "project" ? target.projectRoot : join(process.env.HOME ?? "", ".codex"),
-      "skills",
-      "agent-loop",
-      "SKILL.md",
-    );
-    mkdirSync(dirname(dest), { recursive: true });
-    if (existsSync(skillSrc)) writeText(dest, readText(skillSrc));
-  }
-  if (target.agent === "claude") {
-    const dest = join(
-      target.scope === "project" ? target.projectRoot : join(process.env.HOME ?? "", ".claude"),
-      "skills",
-      "agent-loop",
-      "SKILL.md",
-    );
-    mkdirSync(dirname(dest), { recursive: true });
-    if (existsSync(skillSrc)) writeText(dest, readText(skillSrc));
-  }
+  const base =
+    target.agent === "cursor"
+      ? target.scope === "project"
+        ? join(target.projectRoot, ".cursor")
+        : join(process.env.HOME ?? "", ".cursor")
+      : target.agent === "codex"
+        ? target.scope === "project"
+          ? join(target.projectRoot, ".codex")
+          : join(process.env.HOME ?? "", ".codex")
+        : target.scope === "project"
+          ? join(target.projectRoot, ".claude")
+          : join(process.env.HOME ?? "", ".claude");
+  const dest = join(base, "skills", "agent-loop", "SKILL.md");
+  mkdirSync(dirname(dest), { recursive: true });
+  if (existsSync(skillSrc)) writeText(dest, readText(skillSrc));
 }
 
 export function parseAgents(raw: string): AgentName[] {

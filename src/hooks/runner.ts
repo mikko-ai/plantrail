@@ -75,3 +75,10 @@ export function codexResponse(result: GateResult): string {
   }
   return JSON.stringify({});
 }
+
+export function hookErrorResponse(agent: "cursor" | "claude" | "codex", message: string): string {
+  const result = { decision: "deny" as const, reason: message };
+  if (agent === "claude") return claudeResponse(result);
+  if (agent === "codex") return codexResponse(result);
+  return cursorResponse(result);
+}

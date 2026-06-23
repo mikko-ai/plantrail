@@ -1,4 +1,4 @@
-import { codexResponse, executeHook, type NormalizedHookInput } from "./runner.js";
+import { codexResponse, executeHook, hookErrorResponse, type NormalizedHookInput } from "./runner.js";
 
 function normalize(raw: Record<string, unknown>): NormalizedHookInput {
   const event = String(raw.hook_event_name ?? raw.event ?? "PreToolUse");
@@ -18,6 +18,6 @@ executeHook(normalize)
     if (result.decision === "deny") process.exit(2);
   })
   .catch((err) => {
-    console.error(JSON.stringify({ decision: "block", reason: String(err) }));
+    console.log(hookErrorResponse("codex", String(err)));
     process.exit(2);
   });

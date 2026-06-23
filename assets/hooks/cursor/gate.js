@@ -6881,6 +6881,24 @@ var require_dist = __commonJS({
 });
 
 // src/core/state-machine.ts
+var TRANSITIONS = {
+  draft: ["review_required", "blocked"],
+  review_required: ["changes_requested", "approved", "blocked"],
+  changes_requested: ["review_required", "blocked"],
+  approved: ["doing", "changes_requested", "blocked"],
+  doing: ["evidence_required", "changes_requested", "blocked"],
+  evidence_required: ["done", "blocked"],
+  done: [],
+  blocked: ["draft"]
+};
+function canTransition(from, to) {
+  return TRANSITIONS[from]?.includes(to) ?? false;
+}
+function assertTransition(from, to) {
+  if (!canTransition(from, to)) {
+    throw new Error(`Invalid state transition: ${from} -> ${to}`);
+  }
+}
 function isPreApproval(status) {
   return status === "draft" || status === "review_required" || status === "changes_requested";
 }
@@ -6960,6 +6978,9 @@ function authorityApprovalPath(runId) {
 function agentLoopRoot(projectRoot) {
   return join(resolve(projectRoot), ".agent-loop");
 }
+function agentLoopConfigPath(projectRoot) {
+  return join(agentLoopRoot(projectRoot), "config.json");
+}
 function currentRunPointerPath(projectRoot) {
   return join(agentLoopRoot(projectRoot), "current-run");
 }
@@ -7025,7 +7046,148 @@ function verifyPlanIntegrity(planContent, planHash, signature) {
   return { ok: true, reason: "Integrity verified", planHash: currentHash };
 }
 
+// src/core/run-store.ts
+import { existsSync as existsSync4, mkdirSync as mkdirSync4, readdirSync } from "node:fs";
+
+// src/core/run-resolver.ts
+import { existsSync as existsSync3 } from "node:fs";
+import { mkdirSync as mkdirSync3 } from "node:fs";
+function resolveProjectRoot(cwd = process.cwd()) {
+  return cwd;
+}
+function getActiveRunId(projectRoot) {
+  const pointer = currentRunPointerPath(projectRoot);
+  if (!existsSync3(pointer)) return null;
+  const runId = readText(pointer).trim();
+  if (!runId) return null;
+  if (!existsSync3(runDir(projectRoot, runId))) return null;
+  return runId;
+}
+function readAuthorityApproval(runId) {
+  const path = authorityApprovalPath(runId);
+  if (!existsSync3(path)) {
+    throw new Error(`Authority approval not found for run: ${runId}`);
+  }
+  return readJson(path);
+}
+function writeAuthorityApproval(record) {
+  const path = authorityApprovalPath(record.run_id);
+  mkdirSync3(path.replace(/\/approval\.json$/, ""), { recursive: true, mode: 448 });
+  writeJsonAtomic(path, record);
+}
+function syncApprovalMirror(projectRoot, runId, record) {
+  const mirror = runFile(projectRoot, runId, "approval.json");
+  writeJson(mirror, record);
+}
+function loadRunApproval(projectRoot, runId) {
+  return readAuthorityApproval(runId);
+}
+function resolveGateRunId(projectRoot, explicitRunId) {
+  const active = getActiveRunId(projectRoot);
+  const runId = explicitRunId ?? active;
+  if (!runId) {
+    throw new Error("No active run. Use `plantrail use <run>` or `plantrail init-run`.");
+  }
+  if (active && explicitRunId && active !== explicitRunId) {
+    throw new Error(`Run mismatch: active=${active}, event=${explicitRunId}`);
+  }
+  if (active && !explicitRunId && runId !== active) {
+    throw new Error(`current-run pointer invalid for active run ${runId}`);
+  }
+  return runId;
+}
+
+// src/core/schema-validator.ts
+var import_ajv = __toESM(require_ajv(), 1);
+var import_ajv_formats = __toESM(require_dist(), 1);
+import { readFileSync as readFileSync3 } from "node:fs";
+import { join as join2 } from "node:path";
+var Ajv = import_ajv.default.default ?? import_ajv.default;
+var addFormats = import_ajv_formats.default.default ?? import_ajv_formats.default;
+var ajv = new Ajv({ allErrors: true, strict: false, validateSchema: false });
+addFormats(ajv);
+function loadSchema(name) {
+  return JSON.parse(readFileSync3(join2(assetsRoot(), "schemas", name), "utf8"));
+}
+var validators = {
+  approval: ajv.compile(loadSchema("approval.schema.json")),
+  plan: ajv.compile(loadSchema("plan.schema.json")),
+  event: ajv.compile(loadSchema("event.schema.json"))
+};
+function validateApproval(data) {
+  if (!validators.approval(data)) {
+    throw new Error(formatErrors(validators.approval.errors));
+  }
+}
+function formatErrors(errors) {
+  if (!errors) return "Unknown schema validation error";
+  return errors.map((e) => `${e.instancePath || "/"} ${e.message}`).join("; ");
+}
+
+// src/core/run-store.ts
+function ensureAgentLoop(projectRoot) {
+  mkdirSync4(agentLoopRoot(projectRoot), { recursive: true });
+  mkdirSync4(runsRoot(projectRoot), { recursive: true });
+  const configPath = agentLoopConfigPath(projectRoot);
+  if (!existsSync4(configPath)) {
+    const defaultConfig = {
+      scope: "project",
+      approval_policy: "user",
+      high_risk_actions: [
+        "install_deps",
+        "delete_file",
+        "git_commit",
+        "git_push",
+        "deploy",
+        "credentials"
+      ],
+      installed_agents: []
+    };
+    writeJson(configPath, defaultConfig);
+  }
+}
+function updateApproval(projectRoot, runId, mutate) {
+  const current = readAuthorityApproval(runId);
+  const next = mutate({ ...current, updated_at: (/* @__PURE__ */ new Date()).toISOString() });
+  if (next.status !== current.status) {
+    assertTransition(current.status, next.status);
+  }
+  validateApproval(next);
+  writeAuthorityApproval(next);
+  syncApprovalMirror(projectRoot, runId, next);
+  return next;
+}
+function loadAgentLoopConfig(projectRoot) {
+  ensureAgentLoop(projectRoot);
+  return readJson(agentLoopConfigPath(projectRoot));
+}
+function appendEvent(projectRoot, runId, event) {
+  const full = {
+    ts: (/* @__PURE__ */ new Date()).toISOString(),
+    run_id: runId,
+    ...event
+  };
+  appendJsonl(runFile(projectRoot, runId, "events.jsonl"), full);
+}
+function requireRun(projectRoot, runId) {
+  if (!existsSync4(runDir(projectRoot, runId))) {
+    throw new Error(`Run not found: ${runId}`);
+  }
+}
+function getRunApprovalSafe(projectRoot, runId) {
+  requireRun(projectRoot, runId);
+  return loadRunApproval(projectRoot, runId);
+}
+
 // src/core/gate-policy.ts
+var DEFAULT_HIGH_RISK = [
+  "install_deps",
+  "delete_file",
+  "git_commit",
+  "git_push",
+  "deploy",
+  "credentials"
+];
 var READ_ONLY_SHELL = [
   /^ls(\s|$)/,
   /^cat(\s|$)/,
@@ -7039,14 +7201,14 @@ var READ_ONLY_SHELL = [
   /^head(\s|$)/,
   /^tail(\s|$)/
 ];
-var HIGH_RISK = [
-  "install_deps",
-  "delete_file",
-  "git_commit",
-  "git_push",
-  "deploy",
-  "credentials"
-];
+function highRiskActions(projectRoot) {
+  try {
+    const config = loadAgentLoopConfig(projectRoot);
+    return config.high_risk_actions?.length ? config.high_risk_actions : DEFAULT_HIGH_RISK;
+  } catch {
+    return DEFAULT_HIGH_RISK;
+  }
+}
 function relativeTarget(projectRoot, target) {
   const root = projectRoot.replace(/\/$/, "");
   if (target.startsWith(root)) {
@@ -7146,7 +7308,7 @@ function evaluateGate(input, approval) {
   if (!isExecutionAllowed(status)) {
     return { decision: "deny", reason: `Execution not allowed in status=${status}` };
   }
-  if (HIGH_RISK.includes(actionType)) {
+  if (highRiskActions(project_root).includes(actionType)) {
     const step = findMatchingStep(actionType, target, approval.allowed_steps);
     if (!step) {
       return {
@@ -7167,111 +7329,6 @@ function evaluateGate(input, approval) {
     reason: "Allowed by approved plan",
     step_id: matched.step_id
   };
-}
-
-// src/core/run-store.ts
-import { existsSync as existsSync4, mkdirSync as mkdirSync4, readdirSync } from "node:fs";
-
-// src/core/run-resolver.ts
-import { existsSync as existsSync3 } from "node:fs";
-import { mkdirSync as mkdirSync3 } from "node:fs";
-function resolveProjectRoot(cwd = process.cwd()) {
-  return cwd;
-}
-function getActiveRunId(projectRoot) {
-  const pointer = currentRunPointerPath(projectRoot);
-  if (!existsSync3(pointer)) return null;
-  const runId = readText(pointer).trim();
-  if (!runId) return null;
-  if (!existsSync3(runDir(projectRoot, runId))) return null;
-  return runId;
-}
-function readAuthorityApproval(runId) {
-  const path = authorityApprovalPath(runId);
-  if (!existsSync3(path)) {
-    throw new Error(`Authority approval not found for run: ${runId}`);
-  }
-  return readJson(path);
-}
-function writeAuthorityApproval(record) {
-  const path = authorityApprovalPath(record.run_id);
-  mkdirSync3(path.replace(/\/approval\.json$/, ""), { recursive: true, mode: 448 });
-  writeJsonAtomic(path, record);
-}
-function syncApprovalMirror(projectRoot, runId, record) {
-  const mirror = runFile(projectRoot, runId, "approval.json");
-  writeJson(mirror, record);
-}
-function loadRunApproval(projectRoot, runId) {
-  return readAuthorityApproval(runId);
-}
-function resolveGateRunId(projectRoot, explicitRunId) {
-  const active = getActiveRunId(projectRoot);
-  const runId = explicitRunId ?? active;
-  if (!runId) {
-    throw new Error("No active run. Use `plantrail use <run>` or `plantrail init-run`.");
-  }
-  if (active && explicitRunId && active !== explicitRunId) {
-    throw new Error(`Run mismatch: active=${active}, event=${explicitRunId}`);
-  }
-  if (active && !explicitRunId && runId !== active) {
-    throw new Error(`current-run pointer invalid for active run ${runId}`);
-  }
-  return runId;
-}
-
-// src/core/schema-validator.ts
-var import_ajv = __toESM(require_ajv(), 1);
-var import_ajv_formats = __toESM(require_dist(), 1);
-import { readFileSync as readFileSync3 } from "node:fs";
-import { join as join2 } from "node:path";
-var Ajv = import_ajv.default.default ?? import_ajv.default;
-var addFormats = import_ajv_formats.default.default ?? import_ajv_formats.default;
-var ajv = new Ajv({ allErrors: true, strict: false, validateSchema: false });
-addFormats(ajv);
-function loadSchema(name) {
-  return JSON.parse(readFileSync3(join2(assetsRoot(), "schemas", name), "utf8"));
-}
-var validators = {
-  approval: ajv.compile(loadSchema("approval.schema.json")),
-  plan: ajv.compile(loadSchema("plan.schema.json")),
-  event: ajv.compile(loadSchema("event.schema.json"))
-};
-function validateApproval(data) {
-  if (!validators.approval(data)) {
-    throw new Error(formatErrors(validators.approval.errors));
-  }
-}
-function formatErrors(errors) {
-  if (!errors) return "Unknown schema validation error";
-  return errors.map((e) => `${e.instancePath || "/"} ${e.message}`).join("; ");
-}
-
-// src/core/run-store.ts
-function updateApproval(projectRoot, runId, mutate) {
-  const current = readAuthorityApproval(runId);
-  const next = mutate({ ...current, updated_at: (/* @__PURE__ */ new Date()).toISOString() });
-  validateApproval(next);
-  writeAuthorityApproval(next);
-  syncApprovalMirror(projectRoot, runId, next);
-  return next;
-}
-function appendEvent(projectRoot, runId, event) {
-  const full = {
-    ts: (/* @__PURE__ */ new Date()).toISOString(),
-    run_id: runId,
-    ...event
-  };
-  appendJsonl(runFile(projectRoot, runId, "events.jsonl"), full);
-}
-function requireRun(projectRoot, runId) {
-  if (!existsSync4(runDir(projectRoot, runId))) {
-    throw new Error(`Run not found: ${runId}`);
-  }
-}
-function getRunApprovalSafe(projectRoot, runId) {
-  requireRun(projectRoot, runId);
-  return loadRunApproval(projectRoot, runId);
 }
 
 // src/commands/gate.ts
@@ -7362,6 +7419,29 @@ function cursorResponse(result) {
   }
   return JSON.stringify({ permission: "allow" });
 }
+function claudeResponse(result) {
+  if (result.decision === "deny") {
+    return JSON.stringify({
+      hookSpecificOutput: {
+        permissionDecision: "deny",
+        permissionDecisionReason: result.reason
+      }
+    });
+  }
+  return JSON.stringify({});
+}
+function codexResponse(result) {
+  if (result.decision === "deny") {
+    return JSON.stringify({ decision: "block", reason: result.reason });
+  }
+  return JSON.stringify({});
+}
+function hookErrorResponse(agent, message) {
+  const result = { decision: "deny", reason: message };
+  if (agent === "claude") return claudeResponse(result);
+  if (agent === "codex") return codexResponse(result);
+  return cursorResponse(result);
+}
 
 // src/hooks/cursor-gate.ts
 function normalize(raw) {
@@ -7379,6 +7459,6 @@ executeHook(normalize).then((result) => {
   console.log(cursorResponse(result));
   if (result.decision === "deny") process.exit(2);
 }).catch((err) => {
-  console.error(JSON.stringify({ permission: "deny", agentMessage: String(err) }));
+  console.log(hookErrorResponse("cursor", String(err)));
   process.exit(2);
 });

@@ -6,7 +6,8 @@ import {
   setActiveRunId,
 } from "../core/run-resolver.js";
 import { agentLoopConfigPath, runFile } from "../paths.js";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 export function listCommand(projectRoot: string): string[] {
   return listRuns(projectRoot);
@@ -48,17 +49,51 @@ function probeHooks(projectRoot: string): {
   cursor: boolean;
   claude: boolean;
   codex: boolean;
+  hook_bundles: Record<string, boolean>;
+  plantrail_registered: Record<string, boolean>;
   issues: string[];
 } {
   const issues: string[] = [];
-  const cursor = existsSync(`${projectRoot}/.cursor/hooks.json`);
-  const claude = existsSync(`${projectRoot}/.claude/settings.json`);
-  const codex = existsSync(`${projectRoot}/.codex/hooks.json`);
+  const cursorHooks = `${projectRoot}/.cursor/hooks.json`;
+  const claudeSettings = `${projectRoot}/.claude/settings.json`;
+  const codexHooks = `${projectRoot}/.codex/hooks.json`;
+
+  const cursor = existsSync(cursorHooks);
+  const claude = existsSync(claudeSettings);
+  const codex = existsSync(codexHooks);
+
+  const hook_bundles = {
+    cursor: existsSync(join(projectRoot, ".cursor/hooks/plantrail-gate.js")),
+    claude: existsSync(join(projectRoot, ".claude/hooks/plantrail-gate.js")),
+    codex: existsSync(join(projectRoot, ".codex/hooks/plantrail-gate.js")),
+  };
+
+  const plantrail_registered = {
+    cursor: configHasPlantrail(cursorHooks),
+    claude: configHasPlantrail(claudeSettings),
+    codex: configHasPlantrail(codexHooks),
+  };
+
   if (!cursor && !claude && !codex) {
     issues.push("No agent hooks detected; gate enforcement may fail-open");
+  }
+  for (const [agent, ok] of Object.entries(hook_bundles)) {
+    if (plantrail_registered[agent as keyof typeof plantrail_registered] && !ok) {
+      issues.push(`${agent} hooks.json references plantrail but bundle missing`);
+    }
   }
   if (codex) {
     issues.push("Codex hooks require manual `/hooks` trust before enforcement");
   }
-  return { cursor, claude, codex, issues };
+  return { cursor, claude, codex, hook_bundles, plantrail_registered, issues };
+}
+
+function configHasPlantrail(path: string): boolean {
+  if (!existsSync(path)) return false;
+  try {
+    const raw = readFileSync(path, "utf8");
+    return raw.includes("plantrail-gate") || raw.includes("plantrail");
+  } catch {
+    return false;
+  }
 }

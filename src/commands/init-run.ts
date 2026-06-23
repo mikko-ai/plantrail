@@ -2,9 +2,9 @@ import { writeAuthorityApproval, setActiveRunId, syncApprovalMirror } from "../c
 import { withRunLock } from "../core/lock.js";
 import {
   appendEvent,
+  assertCanStartNewRun,
   copyTemplate,
   ensureAgentLoop,
-  listRuns,
 } from "../core/run-store.js";
 import { writeText } from "../core/fs-safe.js";
 import { runFile } from "../paths.js";
@@ -35,10 +35,7 @@ function makeRunId(goal: string): string {
 
 export function initRun(projectRoot: string, goal: string): string {
   ensureAgentLoop(projectRoot);
-  const active = listRuns(projectRoot);
-  if (active.length > 0) {
-    // single active run invariant: warn but allow new run and switch
-  }
+  assertCanStartNewRun(projectRoot);
   const runId = makeRunId(goal);
   return withRunLock(projectRoot, runId, () => {
     writeText(runFile(projectRoot, runId, "request.md"), `# Request\n\n${goal.trim()}\n`);

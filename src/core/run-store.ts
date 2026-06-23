@@ -8,7 +8,7 @@ import {
   runFile,
   runsRoot,
 } from "../paths.js";
-import { appendJsonl, readText, writeJson, writeText } from "./fs-safe.js";
+import { appendJsonl, readJson, readText, writeJson, writeText } from "./fs-safe.js";
 import {
   getActiveRunId,
   loadRunApproval,
@@ -17,7 +17,7 @@ import {
   syncApprovalMirror,
   writeAuthorityApproval,
 } from "./run-resolver.js";
-import { assertTransition } from "./state-machine.js";
+import { assertTransition, isExecutionAllowed } from "./state-machine.js";
 import type { AgentLoopConfig, ApprovalRecord, WorkflowEvent } from "../types.js";
 import { validateApproval } from "./schema-validator.js";
 
@@ -58,10 +58,46 @@ export function updateApproval(
 ): ApprovalRecord {
   const current = readAuthorityApproval(runId);
   const next = mutate({ ...current, updated_at: new Date().toISOString() });
+  if (next.status !== current.status) {
+    assertTransition(current.status, next.status);
+  }
   validateApproval(next);
   writeAuthorityApproval(next);
   syncApprovalMirror(projectRoot, runId, next);
   return next;
+}
+
+export function loadAgentLoopConfig(projectRoot: string): AgentLoopConfig {
+  ensureAgentLoop(projectRoot);
+  return readJson<AgentLoopConfig>(agentLoopConfigPath(projectRoot));
+}
+
+export function updateAgentLoopConfig(
+  projectRoot: string,
+  mutate: (config: AgentLoopConfig) => AgentLoopConfig,
+): AgentLoopConfig {
+  const current = loadAgentLoopConfig(projectRoot);
+  const next = mutate(current);
+  writeJson(agentLoopConfigPath(projectRoot), next);
+  return next;
+}
+
+export function assertCanStartNewRun(projectRoot: string): void {
+  const activeId = getActiveRunId(projectRoot);
+  if (!activeId) return;
+  try {
+    const approval = readAuthorityApproval(activeId);
+    if (isExecutionAllowed(approval.status)) {
+      throw new Error(
+        `Active run ${activeId} is in status=${approval.status}. Close it with 'plantrail close' before starting a new run.`,
+      );
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("Authority approval not found")) {
+      return;
+    }
+    throw err;
+  }
 }
 
 export function appendEvent(

@@ -4,6 +4,16 @@ import { readText } from "./fs-safe.js";
 import { runFile } from "../paths.js";
 import { verifyPlanIntegrity } from "./integrity.js";
 import type { ApprovalRecord } from "../types.js";
+import { loadAgentLoopConfig } from "./run-store.js";
+
+const DEFAULT_HIGH_RISK: ActionType[] = [
+  "install_deps",
+  "delete_file",
+  "git_commit",
+  "git_push",
+  "deploy",
+  "credentials",
+];
 
 const READ_ONLY_SHELL = [
   /^ls(\s|$)/,
@@ -19,14 +29,14 @@ const READ_ONLY_SHELL = [
   /^tail(\s|$)/,
 ];
 
-const HIGH_RISK: ActionType[] = [
-  "install_deps",
-  "delete_file",
-  "git_commit",
-  "git_push",
-  "deploy",
-  "credentials",
-];
+function highRiskActions(projectRoot: string): ActionType[] {
+  try {
+    const config = loadAgentLoopConfig(projectRoot);
+    return config.high_risk_actions?.length ? config.high_risk_actions : DEFAULT_HIGH_RISK;
+  } catch {
+    return DEFAULT_HIGH_RISK;
+  }
+}
 
 function relativeTarget(projectRoot: string, target: string): string {
   const root = projectRoot.replace(/\/$/, "");
@@ -153,7 +163,7 @@ export function evaluateGate(
     return { decision: "deny", reason: `Execution not allowed in status=${status}` };
   }
 
-  if (HIGH_RISK.includes(actionType)) {
+  if (highRiskActions(project_root).includes(actionType)) {
     const step = findMatchingStep(actionType, target, approval.allowed_steps);
     if (!step) {
       return {
