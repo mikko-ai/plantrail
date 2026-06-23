@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { assetsRoot } from "../paths.js";
 import type { ErrorObject } from "ajv";
 import type { PlanDocument } from "../types.js";
+import { PLAN_FIELD_ALIASES, PLAN_SECTION_ALIASES } from "./i18n.js";
 
 const Ajv = AjvModule.default ?? AjvModule;
 const addFormats = addFormatsModule.default ?? addFormatsModule;
@@ -47,17 +48,17 @@ function formatErrors(errors: ErrorObject[] | null | undefined): string {
 
 export function parsePlanMarkdown(content: string): PlanDocument {
   const sections = splitTopLevelSections(content);
-  const goal = getSection(sections, ["goal", "目标"]);
-  const stepsRaw = getSection(sections, ["steps", "步骤"]);
+  const goal = getSection(sections, PLAN_SECTION_ALIASES.goal);
+  const stepsRaw = getSection(sections, PLAN_SECTION_ALIASES.steps);
 
   if (!goal || !stepsRaw) {
     throw new Error("Plan must include Goal/目标 and Steps/步骤 sections");
   }
 
   const goalText = goal.trim();
-  const non_goals = parseList(getSection(sections, ["non-goals", "非目标"]) ?? "");
+  const non_goals = parseList(getSection(sections, PLAN_SECTION_ALIASES.nonGoals) ?? "");
   const affected_modules = parseList(
-    getSection(sections, ["affected modules", "受影响模块"]) ?? "",
+    getSection(sections, PLAN_SECTION_ALIASES.affectedModules) ?? "",
   );
   const steps = parseSteps(stepsRaw);
 
@@ -71,7 +72,7 @@ export function parsePlanMarkdown(content: string): PlanDocument {
   return doc;
 }
 
-function getSection(sections: Map<string, string>, names: string[]): string | undefined {
+function getSection(sections: Map<string, string>, names: readonly string[]): string | undefined {
   for (const name of names) {
     const value = sections.get(name);
     if (value !== undefined) return value;
@@ -129,16 +130,16 @@ function parseSteps(section: string): PlanDocument["steps"] {
       if (m) fields.set(m[1].trim().toLowerCase(), m[2].trim());
     }
 
-    const action_types = (getField(fields, ["action types", "动作类型"]) ?? "")
+    const action_types = (getField(fields, PLAN_FIELD_ALIASES.actionTypes) ?? "")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean) as PlanDocument["steps"][0]["action_types"];
 
-    const path_patterns = (getField(fields, ["path patterns", "路径模式"]) ?? "")
+    const path_patterns = (getField(fields, PLAN_FIELD_ALIASES.pathPatterns) ?? "")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
-    const command_patterns = (getField(fields, ["command patterns", "命令模式"]) ?? "")
+    const command_patterns = (getField(fields, PLAN_FIELD_ALIASES.commandPatterns) ?? "")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
@@ -146,21 +147,21 @@ function parseSteps(section: string): PlanDocument["steps"] {
     return {
       step_id,
       title,
-      description: getField(fields, ["description", "描述"]) || title,
+      description: getField(fields, PLAN_FIELD_ALIASES.description) || title,
       action_types,
       path_patterns: path_patterns.length ? path_patterns : undefined,
       command_patterns: command_patterns.length ? command_patterns : undefined,
-      verification: getField(fields, ["verification", "验证"]) ?? "",
-      risks: getField(fields, ["risks", "风险"]) ?? "",
-      rollback: getField(fields, ["rollback", "回滚"]) ?? "",
+      verification: getField(fields, PLAN_FIELD_ALIASES.verification) ?? "",
+      risks: getField(fields, PLAN_FIELD_ALIASES.risks) ?? "",
+      rollback: getField(fields, PLAN_FIELD_ALIASES.rollback) ?? "",
       requires_user_confirm: /true/i.test(
-        getField(fields, ["requires user confirm", "需要用户确认"]) ?? "",
+        getField(fields, PLAN_FIELD_ALIASES.requiresUserConfirm) ?? "",
       ),
     };
   });
 }
 
-function getField(fields: Map<string, string>, names: string[]): string | undefined {
+function getField(fields: Map<string, string>, names: readonly string[]): string | undefined {
   for (const name of names) {
     const value = fields.get(name);
     if (value !== undefined) return value;

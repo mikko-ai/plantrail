@@ -5,7 +5,9 @@ import {
   assertCanStartNewRun,
   copyTemplate,
   ensureAgentLoop,
+  loadAgentLoopConfig,
 } from "../core/run-store.js";
+import { getMessagesForLanguage } from "../core/i18n.js";
 import { writeText } from "../core/fs-safe.js";
 import { runFile } from "../paths.js";
 import type { ApprovalRecord } from "../types.js";
@@ -38,12 +40,17 @@ export function initRun(projectRoot: string, goal: string): string {
   assertCanStartNewRun(projectRoot);
   const runId = makeRunId(goal);
   return withRunLock(projectRoot, runId, () => {
-    writeText(runFile(projectRoot, runId, "request.md"), `# 请求\n\n${goal.trim()}\n`);
-    copyTemplate("plan.md", runFile(projectRoot, runId, "plan.md"));
-    copyTemplate("review.md", runFile(projectRoot, runId, "review.md"));
-    copyTemplate("doing.md", runFile(projectRoot, runId, "doing.md"));
-    copyTemplate("evidence.md", runFile(projectRoot, runId, "evidence.md"));
-    copyTemplate("final.md", runFile(projectRoot, runId, "final.md"));
+    const config = loadAgentLoopConfig(projectRoot);
+    const messages = getMessagesForLanguage(config.language);
+    writeText(
+      runFile(projectRoot, runId, "request.md"),
+      `# ${messages.requestTitle}\n\n${goal.trim()}\n`,
+    );
+    copyTemplate(projectRoot, "plan.md", runFile(projectRoot, runId, "plan.md"));
+    copyTemplate(projectRoot, "review.md", runFile(projectRoot, runId, "review.md"));
+    copyTemplate(projectRoot, "doing.md", runFile(projectRoot, runId, "doing.md"));
+    copyTemplate(projectRoot, "evidence.md", runFile(projectRoot, runId, "evidence.md"));
+    copyTemplate(projectRoot, "final.md", runFile(projectRoot, runId, "final.md"));
     writeText(runFile(projectRoot, runId, "events.jsonl"), "");
 
     const record: ApprovalRecord = {

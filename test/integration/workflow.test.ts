@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { initRun } from "../../src/commands/init-run.js";
@@ -9,6 +9,7 @@ import { runGate } from "../../src/commands/gate.js";
 import { logRun } from "../../src/commands/log.js";
 import { verifyRun, closeRun } from "../../src/commands/close.js";
 import { getActiveRunId } from "../../src/core/run-resolver.js";
+import { updateAgentLoopConfig } from "../../src/core/run-store.js";
 
 describe("happy path", () => {
   let root: string;
@@ -78,6 +79,40 @@ Test
       readFileSync(join(root, ".agent-loop", "runs", runId, "approval.json"), "utf8"),
     );
     expect(approval.status).toBe("done");
+  });
+
+  it("generates English markdown when language is en", () => {
+    updateAgentLoopConfig(root, (config) => ({ ...config, language: "en" }));
+    const runId = initRun(root, "English feature");
+
+    const request = readFileSync(join(root, ".agent-loop", "runs", runId, "request.md"), "utf8");
+    expect(request).toContain("# Request");
+
+    const plan = readFileSync(join(root, ".agent-loop", "runs", runId, "plan.md"), "utf8");
+    expect(plan).toContain("# Goal");
+
+    writeFileSync(join(root, ".agent-loop", "runs", runId, "plan.md"), `# Goal
+Ship feature
+
+# Non-goals
+- n/a
+
+# Affected modules
+- src
+
+# Steps
+## [step-1] Edit
+**Description:** edit file
+**Action types:** write_file
+**Path patterns:** src/**
+**Verification:** npm test
+**Risks:** low
+**Rollback:** revert
+`);
+
+    reviewPlan(root, runId);
+    const review = readFileSync(join(root, ".agent-loop", "runs", runId, "review.md"), "utf8");
+    expect(review).toContain("## Review checklist");
   });
 });
 

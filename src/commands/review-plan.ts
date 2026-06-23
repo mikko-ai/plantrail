@@ -1,6 +1,6 @@
 import { appendMarkdownSection, readText } from "../core/fs-safe.js";
-import { updateApproval } from "../core/run-store.js";
-import { requireRun } from "../core/run-store.js";
+import { loadAgentLoopConfig, updateApproval, requireRun } from "../core/run-store.js";
+import { getMessagesForLanguage, REVIEW_CHECKLIST_MARKERS } from "../core/i18n.js";
 import { runFile } from "../paths.js";
 import { validatePlan } from "./validate-plan.js";
 
@@ -9,15 +9,14 @@ export function reviewPlan(projectRoot: string, runId: string): void {
   validatePlan(projectRoot, runId);
   const reviewPath = runFile(projectRoot, runId, "review.md");
   const content = readText(reviewPath);
-  if (!content.includes("## 审查清单") && !content.includes("## Review checklist")) {
-    appendMarkdownSection(reviewPath, "审查清单", [
-      "- 计划可执行",
-      "- 没有明显遗漏或循环依赖",
-      "- 没有没有验证措施的危险命令",
-      "- 可以安全地逐步执行",
-      "- 高危动作需要用户批准",
+  const hasChecklist = REVIEW_CHECKLIST_MARKERS.some((marker) => content.includes(marker));
+  if (!hasChecklist) {
+    const config = loadAgentLoopConfig(projectRoot);
+    const messages = getMessagesForLanguage(config.language);
+    appendMarkdownSection(reviewPath, messages.reviewChecklistTitle, [
+      ...messages.reviewChecklistItems,
       "",
-      "**结论**：`approved_recommendation` | `changes_requested`",
+      messages.reviewConclusion,
     ].join("\n"));
   }
   updateApproval(projectRoot, runId, (record) => {

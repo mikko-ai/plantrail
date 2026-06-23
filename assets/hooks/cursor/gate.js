@@ -7133,6 +7133,7 @@ function ensureAgentLoop(projectRoot) {
     const defaultConfig = {
       scope: "project",
       approval_policy: "user",
+      language: "zh-CN",
       high_risk_actions: [
         "install_deps",
         "delete_file",

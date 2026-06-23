@@ -80,6 +80,7 @@ export interface AgentLoopConfig {
   approval_policy: "user";
   high_risk_actions: ActionType[];
   installed_agents: string[];
+  language?: "zh-CN" | "en";
 }
 
 export type LogKind = "doing" | "decision" | "evidence";

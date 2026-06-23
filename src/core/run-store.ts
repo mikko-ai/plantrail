@@ -3,7 +3,6 @@ import { join } from "node:path";
 import {
   agentLoopConfigPath,
   agentLoopRoot,
-  assetsRoot,
   runDir,
   runFile,
   runsRoot,
@@ -20,6 +19,10 @@ import {
 import { assertTransition, isExecutionAllowed } from "./state-machine.js";
 import type { AgentLoopConfig, ApprovalRecord, WorkflowEvent } from "../types.js";
 import { validateApproval } from "./schema-validator.js";
+import {
+  normalizeLanguage,
+  resolveTemplatePath,
+} from "./i18n.js";
 
 export function ensureAgentLoop(projectRoot: string): void {
   mkdirSync(agentLoopRoot(projectRoot), { recursive: true });
@@ -29,6 +32,7 @@ export function ensureAgentLoop(projectRoot: string): void {
     const defaultConfig: AgentLoopConfig = {
       scope: "project",
       approval_policy: "user",
+      language: "zh-CN",
       high_risk_actions: [
         "install_deps",
         "delete_file",
@@ -119,11 +123,14 @@ export function requireRun(projectRoot: string, runId: string): void {
   }
 }
 
-export function copyTemplate(name: string, dest: string): void {
-  const src = join(assetsRoot(), "templates", name);
-  if (existsSync(src)) {
-    writeText(dest, readText(src));
+export function copyTemplate(projectRoot: string, name: string, dest: string): void {
+  const config = loadAgentLoopConfig(projectRoot);
+  const lang = normalizeLanguage(config.language);
+  const src = resolveTemplatePath(name, lang);
+  if (!src) {
+    throw new Error(`Template not found: ${name} (language=${lang})`);
   }
+  writeText(dest, readText(src));
 }
 
 export function getRunApprovalSafe(projectRoot: string, runId: string): ApprovalRecord {
