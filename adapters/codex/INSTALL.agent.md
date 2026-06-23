@@ -10,7 +10,7 @@
 ## 安装
 
 ```bash
-npx plantrail install --agent codex --scope project
+npx @mikko/plantrail install --agent codex --scope project
 ```
 
 ## 手动信任（必需）
@@ -26,7 +26,7 @@ npx plantrail install --agent codex --scope project
 ## 验证
 
 ```bash
-npx plantrail status
+npx @mikko/plantrail status
 ```
 
 检查输出中的 Codex trust 状态警告。
@@ -34,5 +34,5 @@ npx plantrail status
 ## 卸载
 
 ```bash
-npx plantrail uninstall --agent codex --scope project
+npx @mikko/plantrail uninstall --agent codex --scope project
 ```

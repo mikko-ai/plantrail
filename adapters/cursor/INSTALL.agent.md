@@ -13,7 +13,7 @@
 在项目根目录（或目标工作区）运行：
 
 ```bash
-npx plantrail install --agent cursor --scope project
+npx @mikko/plantrail install --agent cursor --scope project
 ```
 
 如果用户选择全局安装，改用 `--scope global`。
@@ -21,7 +21,7 @@ npx plantrail install --agent cursor --scope project
 ## 验证
 
 ```bash
-npx plantrail status
+npx @mikko/plantrail status
 ```
 
 确认 `hook_probe.cursor` 为 true。若为 false，重新运行安装命令或检查 `.cursor/hooks.json`。
@@ -37,5 +37,5 @@ npx plantrail status
 ## 卸载
 
 ```bash
-npx plantrail uninstall --agent cursor --scope project
+npx @mikko/plantrail uninstall --agent cursor --scope project
 ```

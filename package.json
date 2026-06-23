@@ -1,5 +1,5 @@
 {
-  "name": "plantrail",
+  "name": "@mikko/plantrail",
   "version": "0.1.0",
   "description": "Auditable agent workflow toolkit (Plan → Review → Approve → Doing → Evidence → Final)",
   "type": "module",
@@ -30,6 +30,9 @@
     "audit"
   ],
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "esbuild": "^0.24.0",

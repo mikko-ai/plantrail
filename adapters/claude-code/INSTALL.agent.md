@@ -10,13 +10,13 @@
 ## 安装
 
 ```bash
-npx plantrail install --agent claude --scope project
+npx @mikko/plantrail install --agent claude --scope project
 ```
 
 ## 验证
 
 ```bash
-npx plantrail status
+npx @mikko/plantrail status
 ```
 
 确认 `hook_probe.claude` 为 true。如果 hooks 未触发，在 Claude Code 中使用 `/hooks` 检查。
@@ -24,5 +24,5 @@ npx plantrail status
 ## 卸载
 
 ```bash
-npx plantrail uninstall --agent claude --scope project
+npx @mikko/plantrail uninstall --agent claude --scope project
 ```
