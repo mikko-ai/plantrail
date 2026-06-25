@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createRequire } from "node:module";
 import { Command } from "commander";
 import { initRun } from "./commands/init-run.js";
 import { validatePlan } from "./commands/validate-plan.js";
@@ -13,12 +14,15 @@ import { listCommand, showRun, statusCommand, useRun } from "./commands/manage.j
 import { installAgent, parseAgents, uninstallAgent } from "./adapters/install.js";
 import { resolveProjectRoot } from "./core/run-resolver.js";
 
+const require = createRequire(import.meta.url);
+const { version } = require("../package.json") as { version: string };
+
 const program = new Command();
 
 program
   .name("plantrail")
   .description("Auditable agent workflow toolkit")
-  .version("0.1.0");
+  .version(version);
 
 program
   .command("init-run")

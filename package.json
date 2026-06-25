@@ -12,7 +12,7 @@
     "adapters"
   ],
   "scripts": {
-    "build": "tsc && node scripts/bundle-hooks.mjs",
+    "build": "tsc && node scripts/bundle-hooks.mjs && chmod +x dist/cli.js",
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",

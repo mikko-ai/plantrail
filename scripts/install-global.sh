@@ -30,6 +30,8 @@ if [ -x "$PLANTRAIL_BIN" ]; then
   if [ "$(command -v plantrail 2>/dev/null || true)" != "$PLANTRAIL_BIN" ]; then
     echo "提示: PATH 中的 plantrail 与本次安装路径不一致, 请确认 ${GLOBAL_BIN} 在 PATH 中且优先级正确"
   fi
+elif [ -L "$PLANTRAIL_BIN" ] || [ -f "$PLANTRAIL_BIN" ]; then
+  echo "提示: ${PLANTRAIL_BIN} 存在但不可执行, 请运行 npm run build (会设置 dist/cli.js 可执行位)"
 else
   echo "提示: 未在 ${GLOBAL_BIN} 找到 plantrail, 安装可能失败"
 fi
