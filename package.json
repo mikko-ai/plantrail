@@ -1,6 +1,6 @@
 {
   "name": "@mikko/plantrail",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Auditable agent workflow toolkit (Plan → Review → Approve → Doing → Evidence → Final)",
   "type": "module",
   "bin": {
