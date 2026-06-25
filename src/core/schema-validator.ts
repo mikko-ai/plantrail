@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { assetsRoot } from "../paths.js";
 import type { ErrorObject } from "ajv";
-import type { PlanDocument } from "../types.js";
+import type { AllowedStep, LoopPolicy, PlanDocument } from "../types.js";
 import { PLAN_FIELD_ALIASES, PLAN_SECTION_ALIASES } from "./i18n.js";
 
 const Ajv = AjvModule.default ?? AjvModule;
@@ -61,15 +61,48 @@ export function parsePlanMarkdown(content: string): PlanDocument {
     getSection(sections, PLAN_SECTION_ALIASES.affectedModules) ?? "",
   );
   const steps = parseSteps(stepsRaw);
+  const loop = parseLoopSection(sections);
 
   const doc: PlanDocument = {
     goal: goalText,
     non_goals,
     affected_modules,
     steps,
+    ...(loop ? { loop } : {}),
   };
   validatePlan(doc);
   return doc;
+}
+
+function parseLoopSection(sections: Map<string, string>): LoopPolicy | undefined {
+  const stopRaw = getSection(sections, PLAN_SECTION_ALIASES.stopCondition);
+  if (!stopRaw) return undefined;
+
+  // Strip HTML comments so commented-out template placeholders are never parsed.
+  const stopClean = stopRaw.replace(/<!--[\s\S]*?-->/g, "");
+
+  const fields = new Map<string, string>();
+  for (const line of stopClean.split("\n")) {
+    const m = line.match(/^\*\*([^:：]+)[：:]\*\*\s*(.*)$/);
+    if (m) fields.set(m[1].trim().toLowerCase(), m[2].trim());
+  }
+
+  // Only an explicit "**Command:** ..." field enables a loop. There is intentionally
+  // no "first non-empty line" fallback, so commented-out / placeholder template
+  // sections never accidentally turn a plain run into a self-driving loop.
+  const stop_command = getField(fields, PLAN_FIELD_ALIASES.stopCommand);
+
+  const maxIterRaw = getField(fields, PLAN_FIELD_ALIASES.maxIterations) ??
+    getSection(sections, PLAN_SECTION_ALIASES.maxIterations)?.trim();
+
+  if (!stop_command) return undefined;
+
+  const max_iterations = maxIterRaw ? parseInt(maxIterRaw, 10) : 10;
+  if (!Number.isFinite(max_iterations) || max_iterations < 1) {
+    throw new Error(`Invalid max_iterations: ${maxIterRaw}`);
+  }
+
+  return { stop_command, max_iterations };
 }
 
 function getSection(sections: Map<string, string>, names: readonly string[]): string | undefined {
@@ -169,11 +202,15 @@ function getField(fields: Map<string, string>, names: readonly string[]): string
   return undefined;
 }
 
-export function planToAllowedSteps(plan: PlanDocument) {
+export function planToAllowedSteps(plan: PlanDocument): AllowedStep[] {
   return plan.steps.map((step) => ({
     step_id: step.step_id,
     action_types: step.action_types,
     path_patterns: step.path_patterns,
     command_patterns: step.command_patterns,
   }));
+}
+
+export function planToLoopPolicy(plan: PlanDocument): LoopPolicy | undefined {
+  return plan.loop;
 }

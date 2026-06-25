@@ -1,4 +1,4 @@
-import { claudeResponse, executeHook, hookErrorResponse, type NormalizedHookInput } from "./runner.js";
+import { claudeResponse, claudeStopResponse, executeAnyHook, hookErrorResponse, type NormalizedHookInput } from "./runner.js";
 
 function normalize(raw: Record<string, unknown>): NormalizedHookInput {
   const event = String(raw.hook_event_name ?? "PreToolUse");
@@ -11,10 +11,16 @@ function normalize(raw: Record<string, unknown>): NormalizedHookInput {
   };
 }
 
-executeHook(normalize)
+executeAnyHook(normalize)
   .then((result) => {
-    console.log(claudeResponse(result));
-    if (result.decision === "deny") process.exit(2);
+    if (result.isStop) {
+      // Stop hook: always exit 0
+      console.log(claudeStopResponse(result.heartbeat!));
+      process.exit(0);
+    } else {
+      console.log(claudeResponse(result.gate!));
+      if (result.gate!.decision === "deny") process.exit(2);
+    }
   })
   .catch((err) => {
     console.log(hookErrorResponse("claude", String(err)));

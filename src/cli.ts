@@ -8,6 +8,7 @@ import { approveRun } from "./commands/approve.js";
 import { logRun } from "./commands/log.js";
 import { closeRun, verifyRun, writeFinal } from "./commands/close.js";
 import { runGate } from "./commands/gate.js";
+import { abortRun } from "./commands/abort.js";
 import { listCommand, showRun, statusCommand, useRun } from "./commands/manage.js";
 import { installAgent, parseAgents, uninstallAgent } from "./adapters/install.js";
 import { resolveProjectRoot } from "./core/run-resolver.js";
@@ -86,11 +87,41 @@ program
 program
   .command("log")
   .argument("<run>", "Run id")
-  .requiredOption("--kind <kind>", "doing|decision|evidence")
-  .requiredOption("--message <message>", "Log message")
+  .requiredOption("--kind <kind>", "doing|decision|evidence|stop-check")
+  .option("--message <message>", "Log message")
   .option("--step-id <stepId>", "Step id")
+  .option("--command <command>", "Shell command (required for stop-check)")
+  .option("--exit-code <code>", "Exit code (required for stop-check)")
+  .option("--output-hash <hash>", "SHA256 of command output (optional for stop-check)")
+  .option("--cwd <cwd>", "Working directory (optional for stop-check)")
   .action((run, opts) => {
-    logRun(resolveProjectRoot(), run, opts.kind, opts.message, opts.stepId);
+    let stopCheck;
+    if (opts.kind === "stop-check") {
+      if (!opts.command) {
+        throw new Error("--command is required for --kind stop-check");
+      }
+      if (opts.exitCode === undefined) {
+        throw new Error("--exit-code is required for --kind stop-check");
+      }
+      const exitCode = Number(opts.exitCode);
+      if (!Number.isInteger(exitCode)) {
+        throw new Error(`--exit-code must be an integer, got ${opts.exitCode}`);
+      }
+      stopCheck = {
+        command: opts.command,
+        exitCode,
+        outputHash: opts.outputHash,
+        cwd: opts.cwd,
+      };
+    }
+    logRun(
+      resolveProjectRoot(),
+      run,
+      opts.kind,
+      opts.message ?? "",
+      opts.stepId,
+      stopCheck,
+    );
     console.log("Logged");
   });
 
@@ -143,6 +174,16 @@ program
 program.command("status").action(() => {
   console.log(JSON.stringify(statusCommand(resolveProjectRoot()), null, 2));
 });
+
+program
+  .command("abort")
+  .argument("<run>", "Run id")
+  .requiredOption("--by <actor>", "Actor (must be user)")
+  .requiredOption("--reason <reason>", "Reason for abort")
+  .action((run, opts) => {
+    abortRun(resolveProjectRoot(), run, opts.by, opts.reason);
+    console.log("Abort requested");
+  });
 
 program
   .command("install")

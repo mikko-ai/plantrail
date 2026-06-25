@@ -6990,8 +6990,14 @@ function runsRoot(projectRoot) {
 function runDir(projectRoot, runId) {
   return join(runsRoot(projectRoot), runId);
 }
+function runLockPath(projectRoot, runId) {
+  return join(runDir(projectRoot, runId), ".lock");
+}
 function runFile(projectRoot, runId, name) {
   return join(runDir(projectRoot, runId), name);
+}
+function loopStatePath(projectRoot, runId) {
+  return runFile(projectRoot, runId, "loop.json");
 }
 
 // src/core/integrity.ts
@@ -7102,6 +7108,30 @@ var import_ajv = __toESM(require_ajv(), 1);
 var import_ajv_formats = __toESM(require_dist(), 1);
 import { readFileSync as readFileSync3 } from "node:fs";
 import { join as join2 } from "node:path";
+
+// src/core/i18n.ts
+var PLAN_SECTION_ALIASES = {
+  goal: ["goal", "\u76EE\u6807"],
+  steps: ["steps", "\u6B65\u9AA4"],
+  nonGoals: ["non-goals", "\u975E\u76EE\u6807"],
+  affectedModules: ["affected modules", "\u53D7\u5F71\u54CD\u6A21\u5757"],
+  stopCondition: ["stop condition", "\u505C\u6B62\u6761\u4EF6"],
+  maxIterations: ["max iterations", "\u5FAA\u73AF\u4E0A\u9650"]
+};
+var PLAN_FIELD_ALIASES = {
+  description: ["description", "\u63CF\u8FF0"],
+  actionTypes: ["action types", "\u52A8\u4F5C\u7C7B\u578B"],
+  pathPatterns: ["path patterns", "\u8DEF\u5F84\u6A21\u5F0F"],
+  commandPatterns: ["command patterns", "\u547D\u4EE4\u6A21\u5F0F"],
+  verification: ["verification", "\u9A8C\u8BC1"],
+  risks: ["risks", "\u98CE\u9669"],
+  rollback: ["rollback", "\u56DE\u6EDA"],
+  requiresUserConfirm: ["requires user confirm", "\u9700\u8981\u7528\u6237\u786E\u8BA4"],
+  stopCommand: ["command", "\u547D\u4EE4"],
+  maxIterations: ["max iterations", "\u5FAA\u73AF\u4E0A\u9650"]
+};
+
+// src/core/schema-validator.ts
 var Ajv = import_ajv.default.default ?? import_ajv.default;
 var addFormats = import_ajv_formats.default.default ?? import_ajv_formats.default;
 var ajv = new Ajv({ allErrors: true, strict: false, validateSchema: false });
@@ -7119,9 +7149,132 @@ function validateApproval(data) {
     throw new Error(formatErrors(validators.approval.errors));
   }
 }
+function validatePlan(data) {
+  if (!validators.plan(data)) {
+    throw new Error(formatErrors(validators.plan.errors));
+  }
+}
 function formatErrors(errors) {
   if (!errors) return "Unknown schema validation error";
   return errors.map((e) => `${e.instancePath || "/"} ${e.message}`).join("; ");
+}
+function parsePlanMarkdown(content) {
+  const sections = splitTopLevelSections(content);
+  const goal = getSection(sections, PLAN_SECTION_ALIASES.goal);
+  const stepsRaw = getSection(sections, PLAN_SECTION_ALIASES.steps);
+  if (!goal || !stepsRaw) {
+    throw new Error("Plan must include Goal/\u76EE\u6807 and Steps/\u6B65\u9AA4 sections");
+  }
+  const goalText = goal.trim();
+  const non_goals = parseList(getSection(sections, PLAN_SECTION_ALIASES.nonGoals) ?? "");
+  const affected_modules = parseList(
+    getSection(sections, PLAN_SECTION_ALIASES.affectedModules) ?? ""
+  );
+  const steps = parseSteps(stepsRaw);
+  const loop = parseLoopSection(sections);
+  const doc = {
+    goal: goalText,
+    non_goals,
+    affected_modules,
+    steps,
+    ...loop ? { loop } : {}
+  };
+  validatePlan(doc);
+  return doc;
+}
+function parseLoopSection(sections) {
+  const stopRaw = getSection(sections, PLAN_SECTION_ALIASES.stopCondition);
+  if (!stopRaw) return void 0;
+  const stopClean = stopRaw.replace(/<!--[\s\S]*?-->/g, "");
+  const fields = /* @__PURE__ */ new Map();
+  for (const line of stopClean.split("\n")) {
+    const m = line.match(/^\*\*([^:：]+)[：:]\*\*\s*(.*)$/);
+    if (m) fields.set(m[1].trim().toLowerCase(), m[2].trim());
+  }
+  const stop_command = getField(fields, PLAN_FIELD_ALIASES.stopCommand);
+  const maxIterRaw = getField(fields, PLAN_FIELD_ALIASES.maxIterations) ?? getSection(sections, PLAN_SECTION_ALIASES.maxIterations)?.trim();
+  if (!stop_command) return void 0;
+  const max_iterations = maxIterRaw ? parseInt(maxIterRaw, 10) : 10;
+  if (!Number.isFinite(max_iterations) || max_iterations < 1) {
+    throw new Error(`Invalid max_iterations: ${maxIterRaw}`);
+  }
+  return { stop_command, max_iterations };
+}
+function getSection(sections, names) {
+  for (const name of names) {
+    const value = sections.get(name);
+    if (value !== void 0) return value;
+  }
+  return void 0;
+}
+function splitTopLevelSections(content) {
+  const map = /* @__PURE__ */ new Map();
+  const lines = content.split("\n");
+  let currentKey = null;
+  let buffer = [];
+  for (const line of lines) {
+    const header = line.match(/^# ([^#\n].*)$/);
+    if (header) {
+      if (currentKey) {
+        map.set(currentKey, buffer.join("\n"));
+      }
+      currentKey = header[1].trim().toLowerCase();
+      buffer = [];
+      continue;
+    }
+    if (currentKey) {
+      buffer.push(line);
+    }
+  }
+  if (currentKey) {
+    map.set(currentKey, buffer.join("\n"));
+  }
+  return map;
+}
+function parseList(section) {
+  return section.split("\n").map((l) => l.replace(/^[-*]\s*/, "").trim()).filter(Boolean);
+}
+function parseSteps(section) {
+  const blocks = section.split(/^##\s+/m).filter(Boolean);
+  return blocks.map((block) => {
+    const lines = block.split("\n");
+    const titleLine = lines[0]?.trim() ?? "";
+    const stepIdMatch = titleLine.match(/\[([^\]]+)\]/);
+    const step_id = stepIdMatch?.[1] ?? titleLine;
+    const title = titleLine.replace(/\[([^\]]+)\]\s*/, "").trim() || step_id;
+    const fields = /* @__PURE__ */ new Map();
+    for (const line of lines.slice(1)) {
+      const m = line.match(/^\*\*([^:：]+)[：:]\*\*\s*(.*)$/);
+      if (m) fields.set(m[1].trim().toLowerCase(), m[2].trim());
+    }
+    const action_types = (getField(fields, PLAN_FIELD_ALIASES.actionTypes) ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    const path_patterns = (getField(fields, PLAN_FIELD_ALIASES.pathPatterns) ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    const command_patterns = (getField(fields, PLAN_FIELD_ALIASES.commandPatterns) ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    return {
+      step_id,
+      title,
+      description: getField(fields, PLAN_FIELD_ALIASES.description) || title,
+      action_types,
+      path_patterns: path_patterns.length ? path_patterns : void 0,
+      command_patterns: command_patterns.length ? command_patterns : void 0,
+      verification: getField(fields, PLAN_FIELD_ALIASES.verification) ?? "",
+      risks: getField(fields, PLAN_FIELD_ALIASES.risks) ?? "",
+      rollback: getField(fields, PLAN_FIELD_ALIASES.rollback) ?? "",
+      requires_user_confirm: /true/i.test(
+        getField(fields, PLAN_FIELD_ALIASES.requiresUserConfirm) ?? ""
+      )
+    };
+  });
+}
+function getField(fields, names) {
+  for (const name of names) {
+    const value = fields.get(name);
+    if (value !== void 0) return value;
+  }
+  return void 0;
+}
+function planToLoopPolicy(plan) {
+  return plan.loop;
 }
 
 // src/core/run-store.ts
@@ -7375,6 +7528,327 @@ function runGate(projectRoot, input) {
   return result;
 }
 
+// src/core/loop.ts
+import { existsSync as existsSync6, readFileSync as readFileSync5 } from "node:fs";
+
+// src/core/lock.ts
+import { closeSync, existsSync as existsSync5, mkdirSync as mkdirSync5, openSync, readFileSync as readFileSync4, unlinkSync, writeSync } from "node:fs";
+import { dirname as dirname3 } from "node:path";
+function withRunLockRetry(projectRoot, runId, fn, fallback, timeoutMs = 3e3) {
+  const lockPath = runLockPath(projectRoot, runId);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      mkdirSync5(dirname3(lockPath), { recursive: true });
+      const fd = openSync(lockPath, "wx");
+      writeSync(fd, `${process.pid}
+`);
+      try {
+        return fn();
+      } finally {
+        closeSync(fd);
+        if (existsSync5(lockPath)) unlinkSync(lockPath);
+      }
+    } catch (err) {
+      if (err.code !== "EEXIST") throw err;
+      if (isLockStale(lockPath)) {
+        try {
+          unlinkSync(lockPath);
+        } catch {
+        }
+        continue;
+      }
+      const end = Date.now() + 50;
+      while (Date.now() < end) {
+      }
+    }
+  }
+  return fallback();
+}
+function isLockStale(lockPath) {
+  try {
+    const content = readFileSync4(lockPath, "utf8").trim();
+    const pid = parseInt(content, 10);
+    if (!Number.isFinite(pid) || pid <= 0) return false;
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch (err) {
+      const code = err.code;
+      if (code === "EPERM") return false;
+      return code === "ESRCH";
+    }
+  } catch {
+    return false;
+  }
+}
+
+// src/core/loop.ts
+var STOP_EVENT_NAMES = /* @__PURE__ */ new Set(["stop", "Stop"]);
+function isStopEvent(event) {
+  return STOP_EVENT_NAMES.has(event);
+}
+function normalizeCommand(cmd) {
+  return cmd.trim().replace(/\s+/g, " ");
+}
+function makeEmptyLoopState(runId) {
+  return {
+    run_id: runId,
+    iteration: 0,
+    iteration_start_ts: (/* @__PURE__ */ new Date()).toISOString(),
+    abort_requested: false
+  };
+}
+function readLoopState(projectRoot, runId) {
+  const path = loopStatePath(projectRoot, runId);
+  if (!existsSync6(path)) return makeEmptyLoopState(runId);
+  try {
+    return readJson(path);
+  } catch {
+    return makeEmptyLoopState(runId);
+  }
+}
+function writeLoopState(projectRoot, runId, state) {
+  writeJson(loopStatePath(projectRoot, runId), state);
+}
+function readStopCheckEvents(projectRoot, runId) {
+  const eventsPath = runFile(projectRoot, runId, "events.jsonl");
+  if (!existsSync6(eventsPath)) return [];
+  const lines = readFileSync5(eventsPath, "utf8").split("\n").filter(Boolean);
+  const events = [];
+  for (const line of lines) {
+    try {
+      const ev = JSON.parse(line);
+      if (ev.kind === "loop_stop_check") events.push(ev);
+    } catch {
+    }
+  }
+  return events;
+}
+function hasSuccessfulStopCheck(projectRoot, runId, stopCommand, iterationStartTs) {
+  const events = readStopCheckEvents(projectRoot, runId);
+  const norm = normalizeCommand(stopCommand);
+  for (const ev of events) {
+    const meta = ev.meta ?? {};
+    if (typeof meta.exit_code === "number" && meta.exit_code === 0 && typeof meta.command === "string" && normalizeCommand(meta.command) === norm && typeof ev.ts === "string" && ev.ts >= iterationStartTs) {
+      return true;
+    }
+  }
+  return false;
+}
+function isHostAbortSignal(payload) {
+  const status = payload.status;
+  return status === "aborted" || status === "error";
+}
+function persistStatus(projectRoot, runId, target) {
+  try {
+    let applied = false;
+    updateApproval(projectRoot, runId, (r) => {
+      if (r.status === target) {
+        applied = true;
+        return r;
+      }
+      if (canTransition(r.status, target)) {
+        applied = true;
+        return { ...r, status: target };
+      }
+      return r;
+    });
+    return applied;
+  } catch {
+    return false;
+  }
+}
+function evaluateHeartbeatLocked(projectRoot, runId, payload) {
+  if (isHostAbortSignal(payload)) {
+    appendEvent(projectRoot, runId, {
+      kind: "loop_host_abort",
+      message: `Host abort/error signal: status=${String(payload.status)}`
+    });
+    const persisted = persistStatus(projectRoot, runId, "blocked");
+    return {
+      action: "finish",
+      reason: "host abort/error signal",
+      next_status: "blocked",
+      persist_failed: !persisted
+    };
+  }
+  let approval;
+  try {
+    approval = readAuthorityApproval(runId);
+  } catch {
+    return { action: "noop", reason: "no approval found for run" };
+  }
+  const planPath = runFile(projectRoot, runId, "plan.md");
+  let planContent;
+  try {
+    planContent = readText(planPath);
+  } catch {
+    return { action: "noop", reason: "plan.md not found" };
+  }
+  if (approval.plan_hash && approval.signature) {
+    const integrity = verifyPlanIntegrity(planContent, approval.plan_hash, approval.signature);
+    if (!integrity.ok) {
+      appendEvent(projectRoot, runId, {
+        kind: "loop_tamper_detected",
+        message: `Plan tampered: ${integrity.reason}`
+      });
+      const persisted = persistStatus(projectRoot, runId, "changes_requested");
+      return {
+        action: "finish",
+        reason: `plan tampered: ${integrity.reason}`,
+        next_status: "changes_requested",
+        persist_failed: !persisted
+      };
+    }
+  }
+  let derivedPolicy;
+  try {
+    const plan = parsePlanMarkdown(planContent);
+    derivedPolicy = planToLoopPolicy(plan);
+  } catch {
+    derivedPolicy = void 0;
+  }
+  const approvalPolicy = approval.loop_policy;
+  if (derivedPolicy == null !== (approvalPolicy == null)) {
+    appendEvent(projectRoot, runId, {
+      kind: "loop_policy_mismatch",
+      message: "loop_policy mismatch between plan and approval \u2014 treating as tamper"
+    });
+    const persisted = persistStatus(projectRoot, runId, "changes_requested");
+    return {
+      action: "finish",
+      reason: "loop_policy mismatch between plan and approval",
+      next_status: "changes_requested",
+      persist_failed: !persisted
+    };
+  }
+  if (!derivedPolicy || !approvalPolicy) {
+    return { action: "noop", reason: "no loop policy \u2014 pass through" };
+  }
+  if (normalizeCommand(derivedPolicy.stop_command) !== normalizeCommand(approvalPolicy.stop_command) || derivedPolicy.max_iterations !== approvalPolicy.max_iterations) {
+    appendEvent(projectRoot, runId, {
+      kind: "loop_policy_mismatch",
+      message: "loop_policy fields changed after approval \u2014 treating as tamper"
+    });
+    const persisted = persistStatus(projectRoot, runId, "changes_requested");
+    return {
+      action: "finish",
+      reason: "loop_policy changed after approval",
+      next_status: "changes_requested",
+      persist_failed: !persisted
+    };
+  }
+  const policy = approvalPolicy;
+  const loopStateExists = existsSync6(loopStatePath(projectRoot, runId));
+  const loopState = readLoopState(projectRoot, runId);
+  if (!loopStateExists) {
+    loopState.iteration_start_ts = approval.approved_at ?? approval.updated_at ?? loopState.iteration_start_ts;
+  }
+  if (loopState.abort_requested) {
+    appendEvent(projectRoot, runId, {
+      kind: "loop_abort_honored",
+      message: `Abort honored: ${loopState.abort_reason ?? "no reason"}`
+    });
+    const persisted = persistStatus(projectRoot, runId, "blocked");
+    return {
+      action: "finish",
+      reason: `abort requested: ${loopState.abort_reason ?? ""}`,
+      next_status: "blocked",
+      persist_failed: !persisted
+    };
+  }
+  if (approval.status === "approved") {
+    const nextState2 = {
+      ...loopState,
+      iteration: loopState.iteration === 0 ? 0 : loopState.iteration
+    };
+    writeLoopState(projectRoot, runId, nextState2);
+    appendEvent(projectRoot, runId, {
+      kind: "loop_heartbeat",
+      message: "status=approved, agent has not started yet \u2014 prompting to begin"
+    });
+    return {
+      action: "continue",
+      reason: "run not yet started",
+      followup_message: `plantrail loop: run is approved but execution has not started. Begin executing step-1 of the plan now. (iteration 0/${policy.max_iterations})`
+    };
+  }
+  const stopMet = hasSuccessfulStopCheck(
+    projectRoot,
+    runId,
+    policy.stop_command,
+    loopState.iteration_start_ts
+  );
+  if (stopMet) {
+    const persisted = persistStatus(projectRoot, runId, "evidence_required");
+    if (!persisted) {
+      appendEvent(projectRoot, runId, {
+        kind: "loop_stop_persist_failed",
+        message: "stop condition met but evidence_required transition failed"
+      });
+      return {
+        action: "continue",
+        reason: "stop met but persist failed \u2014 retry",
+        followup_message: "plantrail loop: stop condition appears met but the run state could not be updated. Please verify run state before continuing."
+      };
+    }
+    appendEvent(projectRoot, runId, {
+      kind: "loop_stop_met",
+      message: `Stop condition met: ${policy.stop_command}`
+    });
+    return {
+      action: "finish",
+      reason: `stop condition met: ${policy.stop_command}`,
+      next_status: "evidence_required"
+    };
+  }
+  if (loopState.iteration >= policy.max_iterations) {
+    appendEvent(projectRoot, runId, {
+      kind: "loop_max_iterations",
+      message: `Max iterations reached: ${loopState.iteration}/${policy.max_iterations}`
+    });
+    const persisted = persistStatus(projectRoot, runId, "blocked");
+    return {
+      action: "finish",
+      reason: `max_iterations (${policy.max_iterations}) exhausted`,
+      next_status: "blocked",
+      persist_failed: !persisted
+    };
+  }
+  const nextIteration = loopState.iteration + 1;
+  const nextStartTs = (/* @__PURE__ */ new Date()).toISOString();
+  const nextState = {
+    ...loopState,
+    iteration: nextIteration,
+    iteration_start_ts: nextStartTs,
+    last_stop_check: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  writeLoopState(projectRoot, runId, nextState);
+  appendEvent(projectRoot, runId, {
+    kind: "loop_heartbeat",
+    message: `Continuing loop: iteration ${nextIteration}/${policy.max_iterations}`,
+    meta: { iteration: nextIteration, max_iterations: policy.max_iterations }
+  });
+  return {
+    action: "continue",
+    reason: `stop condition not yet met \u2014 iteration ${nextIteration}/${policy.max_iterations}`,
+    followup_message: `plantrail loop \u2014 iteration ${nextIteration}/${policy.max_iterations}: stop condition "${policy.stop_command}" not yet satisfied. Continue working through the plan steps. When done, run the stop command and log the result with: plantrail log <run> --kind stop-check --command "${policy.stop_command}" --exit-code <code> --output-hash <hash>`
+  };
+}
+function runLoopHeartbeat(projectRoot, runId, payload) {
+  return withRunLockRetry(
+    projectRoot,
+    runId,
+    () => evaluateHeartbeatLocked(projectRoot, runId, payload),
+    () => ({
+      action: "continue",
+      reason: "lock contention \u2014 safe continue fallback",
+      followup_message: "plantrail loop: could not acquire lock, retrying. Continue working."
+    })
+  );
+}
+
 // src/hooks/runner.ts
 function readStdinJson() {
   return new Promise((resolve2, reject) => {
@@ -7393,21 +7867,38 @@ function readStdinJson() {
     process.stdin.on("error", reject);
   });
 }
-function executeHook(normalize2) {
+function executeAnyHook(normalize2) {
   return readStdinJson().then((raw) => {
     const input = normalize2(raw);
+    if (isStopEvent(input.event)) {
+      try {
+        const projectRoot2 = input.project_root || resolveProjectRoot();
+        const runId2 = input.run_id ?? getActiveRunId(projectRoot2) ?? void 0;
+        if (!runId2) {
+          return { isStop: true, heartbeat: { action: "noop", reason: "no active run" } };
+        }
+        const heartbeat = runLoopHeartbeat(projectRoot2, runId2, input.payload);
+        return { isStop: true, heartbeat };
+      } catch (err) {
+        return {
+          isStop: true,
+          heartbeat: { action: "noop", reason: `heartbeat error: ${String(err)}` }
+        };
+      }
+    }
     const projectRoot = input.project_root || resolveProjectRoot();
     const runId = input.run_id ?? getActiveRunId(projectRoot) ?? void 0;
     if (!runId) {
-      return { decision: "deny", reason: "No active run for gate" };
+      return { isStop: false, gate: { decision: "deny", reason: "No active run for gate" } };
     }
-    return runGate(projectRoot, {
+    const gate = runGate(projectRoot, {
       event: input.event,
       tool: input.tool,
       payload: input.payload,
       project_root: projectRoot,
       run_id: runId
     });
+    return { isStop: false, gate };
   });
 }
 function cursorResponse(result) {
@@ -7437,6 +7928,12 @@ function codexResponse(result) {
   }
   return JSON.stringify({});
 }
+function codexStopResponse(result) {
+  if (result.action === "continue" && result.followup_message) {
+    return JSON.stringify({ decision: "block", reason: result.followup_message });
+  }
+  return JSON.stringify({});
+}
 function hookErrorResponse(agent, message) {
   const result = { decision: "deny", reason: message };
   if (agent === "claude") return claudeResponse(result);
@@ -7456,9 +7953,14 @@ function normalize(raw) {
     project_root: roots[0] ?? process.cwd()
   };
 }
-executeHook(normalize).then((result) => {
-  console.log(codexResponse(result));
-  if (result.decision === "deny") process.exit(2);
+executeAnyHook(normalize).then((result) => {
+  if (result.isStop) {
+    console.log(codexStopResponse(result.heartbeat));
+    process.exit(0);
+  } else {
+    console.log(codexResponse(result.gate));
+    if (result.gate.decision === "deny") process.exit(2);
+  }
 }).catch((err) => {
   console.log(hookErrorResponse("codex", String(err)));
   process.exit(2);

@@ -171,9 +171,68 @@ plantrail/
 - 集成：Cursor/Codex/Claude 真实 hook payload 形态喂同一 gate，验证 deny/allow 与各自响应格式（Claude permissionDecision+exit2 等）；happy path 全流程。
 - 对抗（核心价值）：直接改 approval 提权、批准后改 plan（哈希不符）、current-run 重定向复用旧批准、并发 run 竞态、hook 未装/未 trust 的 fail-open（status 应报警）、shell 旁路写文件（echo>/python -c/heredoc）、Cursor `ask` 被忽略时的 deny 回退、Codex apply_patch 未拦、JSON merge/卸载幂等与共存。
 
+## Loop Plan / 自驱动工作流
+
+### 概述
+
+在 `plan.md` 中声明「停止条件」后，批准时自动生成 `loop_policy`（`stop_command` + `max_iterations`），三端已注册的 Stop/stop hook 升级为"心跳"——每轮 agent 准备结束时触发，由心跳决定续跑或放行。
+
+### 三端 Stop hook 能力差异
+
+| 项目 | Cursor `stop` | Claude `Stop` | Codex `Stop` |
+|------|---|---|---|
+| 续跑响应字段 | `{ followup_message: "..." }` + exit 0 | `{ decision: "block", reason: "..." }` + exit 0 | `{ decision: "block", reason: "..." }` + exit 0 |
+| 放行结束 | `{}` + exit 0 | `{ decision: "approve" }` / `{}` + exit 0 | `{}` + exit 0 |
+| 续跑上限 | `loop_limit`（installer 设为 `null`，由 plantrail 的 max_iterations 管控） | 无已知平台上限 | 无已知上限 |
+| 中止信号 | `status: "aborted"\|"error"` → 不续跑 | `reason` 字段（无标准中止标志） | 不详 |
+| 云端 agent | **Stop hook 暂未接通** | 支持 | 需手动 trust |
+
+### 心跳判定顺序
+
+1. 宿主中止/错误信号（`status:"aborted"|"error"`）→ 放行 + `blocked`
+2. 无 active run → noop（向后兼容）
+3. `plan_hash` 校验失败 → 放行 + `changes_requested`
+4. 派生 `loop_policy` 与 approval 比对不一致（含"一方有另一方没有"）→ 篡改 → 放行 + `blocked`
+5. 两者都无 loop → noop（放行，向后兼容）
+6. plantrail `abort_requested` → 放行 + `blocked`
+7. `status === approved`（未开始执行）→ 续跑，提示开始执行 step-1
+8. `iteration >= max_iterations` → 放行 + `blocked`
+9. 找到新鲜 `loop_stop_check`（command 匹配 + exit_code=0 + ts >= iteration_start_ts）→ 放行 + `evidence_required`
+10. 否则 → 续跑，iteration+1，回灌"继续执行"提示
+
+### 停止条件证据格式（`loop_stop_check` 事件）
+
+```bash
+plantrail log <run> --kind stop-check \
+  --command "npm test" \
+  --exit-code 0 \
+  --output-hash <sha256> \
+  [--cwd /path/to/project]
+```
+
+写入 `events.jsonl`（kind = `loop_stop_check`）：
+```json
+{
+  "ts": "...",  "kind": "loop_stop_check",  "run_id": "...",
+  "message": "stop-check: npm test → exit 0",
+  "meta": { "command": "npm test", "exit_code": 0, "output_hash": "...", "observed_at": "..." }
+}
+```
+
+### 人为终止
+
+```bash
+plantrail abort <run> --by user --reason "feature shipped"
+```
+
+### 状态机扩展
+
+心跳只做 `doing → evidence_required`（stop 满足）或 `doing → blocked`（触顶/abort/篡改）。`done` 仍只能经 `verify + close`，绝不被心跳绕过。
+
 ## 已知限制 / 威胁模型
 
 - 非硬沙箱：hook 未装/未 trust/未覆盖（Codex apply_patch、shell 旁路）时存在 fail-open；以审计 + 完整性 + 自检压低风险，但不能 100% 阻断。
 - HMAC 密钥 `~/.plantrail/key` 与 agent 同 uid（`chmod 600`）。未批准态默认 deny shell 可护住密钥；但 `doing` 态若 `allowed_steps` 放行了 shell，具备 shell 能力的 agent 理论上可读 key 重签改动后的 plan 提权——此为与“shell 旁路”同源的已知残余风险，签名不对抗本地同 uid shell。
 - git 回滚兜底脆弱（无仓库/脏区/二进制），仅作审计提示。
 - 命令级写意图识别为尽力而为，未批准态以“默认 deny shell”降低旁路面。
+- **Loop 残余风险**：`loop.json`（迭代计数）存于运行时，同 uid shell 可重置计数——`max_iterations` 防误循环，不作对抗同 uid 的强安全边界。`stop_command` 执行路径不绕过 gate（禁用 inline），心跳只读结构化证据，但 agent 可伪造 `loop_stop_check` 事件写入 `events.jsonl`（同 uid shell 可写），故 loop 安全仍依赖 gate 的 `allowed_steps` 约束。Cursor 云端 agent 的 Stop hook 暂未接通，云端场景需改用 Cursor SDK 外部 driver。三端续跑可移植性存在差异（Cursor `followup_message`，Claude/Codex `decision:block`）。

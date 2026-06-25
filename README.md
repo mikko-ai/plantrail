@@ -135,6 +135,40 @@ npx @mikko/plantrail use <run>     # 切换当前 active run
 npx @mikko/plantrail status        # hook 存活自检
 ```
 
+### 3b. 自驱动 Loop（/goal 原语）
+
+无需人工持续发 prompt，agent 自动循环直到目标达成：
+
+```bash
+# 1–3 步同上（创建 run，编辑 plan）
+
+# 在 plan.md 的「停止条件」章节填写：
+# **命令:** npm test
+# **循环上限:** 10
+
+# 批准后自动生成 loop_policy
+npx @mikko/plantrail approve <run> --by user
+
+# agent 每轮执行完后：记录验证结果
+npx @mikko/plantrail log <run> --kind stop-check \
+  --command "npm test" --exit-code 0 --output-hash <sha256>
+
+# 查看当前迭代进度
+npx @mikko/plantrail status
+
+# 手动终止（下次 Stop hook 触发时生效）
+npx @mikko/plantrail abort <run> --by user --reason "需要改方向"
+```
+
+**工作原理**：Stop hook 在每轮 agent 结束时作为"心跳"触发——检查结构化 `loop_stop_check` 事件，满足则自动进入 `evidence_required`，否则回灌"继续执行"指令进入下一迭代。
+
+| 结束条件 | 下一状态 |
+|---------|---------|
+| 停止命令 exit 0（新鲜证据） | `evidence_required` |
+| 触顶 `max_iterations` | `blocked` |
+| `abort` / 宿主中止 | `blocked` |
+| 计划被篡改 | `blocked` |
+
 ### 4. Agent 使用约定
 
 agent 执行实质性任务前应遵循：

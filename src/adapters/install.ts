@@ -125,12 +125,22 @@ function installCursor(target: InstallTarget, backups: BackupEntry[]): void {
   const existing = existsSync(hooksPath) ? readJson<Record<string, unknown>>(hooksPath) : { version: 1, hooks: {} };
   const hooks = (existing.hooks as Record<string, unknown[]>) ?? {};
   const cmd = hookCommand("cursor", target.scope, target.projectRoot);
-  const entry = { command: cmd, plantrail: PLANTRAIL_HOOK_ID };
-  for (const event of ["preToolUse", "beforeShellExecution", "stop"]) {
+  const gateEntry = { command: cmd, plantrail: PLANTRAIL_HOOK_ID, timeout: 30 };
+  // For stop: set loop_limit:null so plantrail controls iteration counting internally.
+  // timeout for stop is shorter (10s) since it only reads state files.
+  const stopEntry = { command: cmd, plantrail: PLANTRAIL_HOOK_ID, loop_limit: null, timeout: 10 };
+  for (const event of ["preToolUse", "beforeShellExecution"]) {
     const list = (hooks[event] as Record<string, unknown>[]) ?? [];
-    const filtered = list.filter((h) => h.plantrail !== PLANTRAIL_HOOK_ID);
-    filtered.push(entry);
+    const filtered = list.filter((h) => (h as Record<string, unknown>).plantrail !== PLANTRAIL_HOOK_ID);
+    filtered.push(gateEntry);
     hooks[event] = filtered;
+  }
+  // Stop hook uses separate entry with loop_limit:null
+  {
+    const list = (hooks["stop"] as Record<string, unknown>[]) ?? [];
+    const filtered = list.filter((h) => (h as Record<string, unknown>).plantrail !== PLANTRAIL_HOOK_ID);
+    filtered.push(stopEntry);
+    hooks["stop"] = filtered;
   }
   writeJson(hooksPath, { ...existing, version: 1, hooks });
 
@@ -166,12 +176,19 @@ function installCodex(target: InstallTarget, backups: BackupEntry[]): void {
   const existing = existsSync(hooksPath) ? readJson<Record<string, unknown>>(hooksPath) : { hooks: {} };
   const hooks = (existing.hooks as Record<string, unknown[]>) ?? {};
   const cmd = hookCommand("codex", target.scope, target.projectRoot);
-  const entry = { command: cmd, plantrail: PLANTRAIL_HOOK_ID };
-  for (const event of ["PreToolUse", "PostToolUse", "Stop"]) {
+  const gateEntry = { command: cmd, plantrail: PLANTRAIL_HOOK_ID, timeout: 30 };
+  const stopEntry = { command: cmd, plantrail: PLANTRAIL_HOOK_ID, timeout: 10 };
+  for (const event of ["PreToolUse", "PostToolUse"]) {
     const list = (hooks[event] as Record<string, unknown>[]) ?? [];
-    const filtered = list.filter((h) => h.plantrail !== PLANTRAIL_HOOK_ID);
-    filtered.push(entry);
+    const filtered = list.filter((h) => (h as Record<string, unknown>).plantrail !== PLANTRAIL_HOOK_ID);
+    filtered.push(gateEntry);
     hooks[event] = filtered;
+  }
+  {
+    const list = (hooks["Stop"] as Record<string, unknown>[]) ?? [];
+    const filtered = list.filter((h) => (h as Record<string, unknown>).plantrail !== PLANTRAIL_HOOK_ID);
+    filtered.push(stopEntry);
+    hooks["Stop"] = filtered;
   }
   writeJson(hooksPath, { ...existing, hooks });
 
@@ -211,19 +228,32 @@ function installClaude(target: InstallTarget, backups: BackupEntry[]): void {
   const existing = existsSync(settingsPath) ? readJson<Record<string, unknown>>(settingsPath) : {};
   const hooks = (existing.hooks as Record<string, unknown[]>) ?? {};
   const cmd = hookCommand("claude", target.scope, target.projectRoot);
-  const hookEntry = {
+  const gateHookEntry = {
     matcher: ".*",
-    hooks: [{ type: "command", command: cmd, plantrail: PLANTRAIL_HOOK_ID }],
+    hooks: [{ type: "command", command: cmd, plantrail: PLANTRAIL_HOOK_ID, timeout: 30 }],
+  };
+  const stopHookEntry = {
+    matcher: ".*",
+    hooks: [{ type: "command", command: cmd, plantrail: PLANTRAIL_HOOK_ID, timeout: 10 }],
   };
 
-  for (const event of ["PreToolUse", "PostToolUse", "Stop"]) {
+  for (const event of ["PreToolUse", "PostToolUse"]) {
     const list = (hooks[event] as Record<string, unknown>[]) ?? [];
     const filtered = list.filter(
       (group) =>
-        !((group.hooks as Record<string, unknown>[]) ?? []).some((h) => h.plantrail === PLANTRAIL_HOOK_ID),
+        !((group.hooks as Record<string, unknown>[]) ?? []).some((h) => (h as Record<string, unknown>).plantrail === PLANTRAIL_HOOK_ID),
     );
-    filtered.push(hookEntry);
+    filtered.push(gateHookEntry);
     hooks[event] = filtered;
+  }
+  {
+    const list = (hooks["Stop"] as Record<string, unknown>[]) ?? [];
+    const filtered = list.filter(
+      (group) =>
+        !((group.hooks as Record<string, unknown>[]) ?? []).some((h) => (h as Record<string, unknown>).plantrail === PLANTRAIL_HOOK_ID),
+    );
+    filtered.push(stopHookEntry);
+    hooks["Stop"] = filtered;
   }
   writeJson(settingsPath, { ...existing, hooks });
 

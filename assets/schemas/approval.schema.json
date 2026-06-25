@@ -28,9 +28,19 @@
     },
     "approved_by": { "type": "string" },
     "approved_at": { "type": "string", "format": "date-time" },
-    "updated_at": { "type": "string", "format": "date-time" }
+    "updated_at": { "type": "string", "format": "date-time" },
+    "loop_policy": { "$ref": "#/$defs/loopPolicy" }
   },
   "$defs": {
+    "loopPolicy": {
+      "type": "object",
+      "required": ["stop_command", "max_iterations"],
+      "additionalProperties": false,
+      "properties": {
+        "stop_command": { "type": "string", "minLength": 1 },
+        "max_iterations": { "type": "integer", "minimum": 1, "maximum": 100 }
+      }
+    },
     "allowedStep": {
       "type": "object",
       "required": ["step_id", "action_types"],

@@ -6,6 +6,7 @@ import {
   setActiveRunId,
 } from "../core/run-resolver.js";
 import { agentLoopConfigPath, runFile } from "../paths.js";
+import { readLoopState } from "../core/loop.js";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -16,10 +17,23 @@ export function listCommand(projectRoot: string): string[] {
 export function showRun(projectRoot: string, runId: string): Record<string, unknown> {
   requireRun(projectRoot, runId);
   const approval = loadRunApproval(projectRoot, runId);
+  const loopState = readLoopState(projectRoot, runId);
+  const loop = approval.loop_policy
+    ? {
+        max_iterations: approval.loop_policy.max_iterations,
+        stop_command: approval.loop_policy.stop_command,
+        iteration: loopState.iteration,
+        iteration_start_ts: loopState.iteration_start_ts,
+        last_stop_check: loopState.last_stop_check,
+        abort_requested: loopState.abort_requested,
+        abort_reason: loopState.abort_reason,
+      }
+    : null;
   return {
     run_id: runId,
     active: getActiveRunId(projectRoot) === runId,
     approval,
+    loop,
     request_excerpt: readText(runFile(projectRoot, runId, "request.md")).slice(0, 200),
   };
 }
@@ -36,10 +50,29 @@ export function statusCommand(projectRoot: string): Record<string, unknown> {
     ? readJson(agentLoopConfigPath(projectRoot))
     : null;
   const hookProbe = probeHooks(projectRoot);
+
+  let activeLoop: Record<string, unknown> | null = null;
+  if (active) {
+    try {
+      const approval = loadRunApproval(projectRoot, active);
+      if (approval.loop_policy) {
+        const loopState = readLoopState(projectRoot, active);
+        activeLoop = {
+          iteration: loopState.iteration,
+          max_iterations: approval.loop_policy.max_iterations,
+          stop_command: approval.loop_policy.stop_command,
+          last_stop_check: loopState.last_stop_check,
+          abort_requested: loopState.abort_requested,
+        };
+      }
+    } catch { /* no approval yet */ }
+  }
+
   return {
     active_run: active,
     run_count: runs.length,
     config,
+    active_loop: activeLoop,
     hook_probe: hookProbe,
     warnings: hookProbe.issues,
   };

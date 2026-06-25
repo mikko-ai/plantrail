@@ -56,3 +56,7 @@ export function runLockPath(projectRoot: string, runId: string): string {
 export function runFile(projectRoot: string, runId: string, name: string): string {
   return join(runDir(projectRoot, runId), name);
 }
+
+export function loopStatePath(projectRoot: string, runId: string): string {
+  return runFile(projectRoot, runId, "loop.json");
+}

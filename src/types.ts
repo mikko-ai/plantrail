@@ -36,6 +36,35 @@ export interface ApprovalRecord {
   approved_by?: string;
   approved_at?: string;
   updated_at: string;
+  loop_policy?: LoopPolicy;
+}
+
+/** Runtime loop state stored in .agent-loop/runs/<id>/loop.json (not signed). */
+export interface LoopState {
+  run_id: string;
+  /** Number of "continue" responses sent so far (0 = loop not yet started). */
+  iteration: number;
+  /** ISO timestamp when the current iteration started (used to determine evidence freshness). */
+  iteration_start_ts: string;
+  /** ISO timestamp of the last stop-check event seen by heartbeat. */
+  last_stop_check?: string;
+  abort_requested: boolean;
+  abort_reason?: string;
+  abort_by?: string;
+  abort_at?: string;
+}
+
+/** Result of the loop heartbeat evaluation. */
+export interface LoopHeartbeatResult {
+  /** continue = block agent stop and send followup; finish = allow agent to stop; noop = no loop, pass through. */
+  action: "continue" | "finish" | "noop";
+  reason: string;
+  /** The follow-up message injected into the agent when action=continue. */
+  followup_message?: string;
+  /** Target status when action=finish. */
+  next_status?: "evidence_required" | "blocked" | "changes_requested";
+  /** True when a terminal status could NOT be persisted (state may be inconsistent). */
+  persist_failed?: boolean;
 }
 
 export interface PlanStep {
@@ -51,12 +80,18 @@ export interface PlanStep {
   requires_user_confirm?: boolean;
 }
 
+export interface LoopPolicy {
+  stop_command: string;
+  max_iterations: number;
+}
+
 export interface PlanDocument {
   goal: string;
   non_goals: string[];
   affected_modules: string[];
   steps: PlanStep[];
   high_risk_actions?: string[];
+  loop?: LoopPolicy;
 }
 
 export interface GateInput {
@@ -83,7 +118,7 @@ export interface AgentLoopConfig {
   language?: "zh-CN" | "en";
 }
 
-export type LogKind = "doing" | "decision" | "evidence";
+export type LogKind = "doing" | "decision" | "evidence" | "stop-check";
 
 export interface WorkflowEvent {
   ts: string;

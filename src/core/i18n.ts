@@ -48,6 +48,8 @@ export const PLAN_SECTION_ALIASES = {
   steps: ["steps", "步骤"],
   nonGoals: ["non-goals", "非目标"],
   affectedModules: ["affected modules", "受影响模块"],
+  stopCondition: ["stop condition", "停止条件"],
+  maxIterations: ["max iterations", "循环上限"],
 } as const;
 
 /** Canonical plan field keys → localized label aliases (lowercase). */
@@ -60,6 +62,8 @@ export const PLAN_FIELD_ALIASES = {
   risks: ["risks", "风险"],
   rollback: ["rollback", "回滚"],
   requiresUserConfirm: ["requires user confirm", "需要用户确认"],
+  stopCommand: ["command", "命令"],
+  maxIterations: ["max iterations", "循环上限"],
 } as const;
 
 /** Markers used to detect an existing review checklist (any language). */

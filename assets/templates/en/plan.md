@@ -22,3 +22,15 @@ Describe the goal of this run.
 **Risks:** Low
 **Rollback:** git checkout -- .
 **Requires user confirm:** false
+
+# Stop condition
+
+<!--
+Optional: uncomment and fill the two lines below. When present, approve generates a
+loop_policy and the agent drives itself autonomously until this command exits 0
+(or max-iterations / manual abort). Leave commented out for a normal, non-loop run.
+
+**Command:** npm test
+**Max iterations:** 10
+-->
+
